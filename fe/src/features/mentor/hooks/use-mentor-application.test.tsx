@@ -4,6 +4,7 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useSubmitMentorApplication } from './use-mentor-application';
 import { mentorApi } from '../api/mentor-api';
+import { mentorKeys } from '../query-keys';
 import { authKeys } from '@/features/auth/query-keys';
 import { userKeys } from '@/features/user/query-keys';
 import type {
@@ -79,7 +80,7 @@ describe('useSubmitMentorApplication Hook', () => {
     expect(responseData).toEqual(mockSubmissionResponse);
   });
 
-  it('invalidates authKeys.me() and userKeys.profile() on successful submission', async () => {
+  it('invalidates authKeys.me(), userKeys.profile(), and mentorKeys.myApplication() on successful submission', async () => {
     vi.mocked(mentorApi.submitApplication).mockResolvedValueOnce({
       success: true,
       data: mockSubmissionResponse,
@@ -92,6 +93,7 @@ describe('useSubmitMentorApplication Hook', () => {
     // Pre-populate queries so we can inspect invalidation state
     queryClient.setQueryData(authKeys.me(), { id: 'usr-1', email: 'test@mentify.vn' });
     queryClient.setQueryData(userKeys.profile(), { id: 'usr-1', fullName: 'Tester' });
+    queryClient.setQueryData(mentorKeys.myApplication(), null);
 
     const { result } = renderHook(() => useSubmitMentorApplication(), { wrapper });
 
@@ -104,9 +106,11 @@ describe('useSubmitMentorApplication Hook', () => {
 
     const authQueryState = queryClient.getQueryState(authKeys.me());
     const profileQueryState = queryClient.getQueryState(userKeys.profile());
+    const mentorQueryState = queryClient.getQueryState(mentorKeys.myApplication());
 
     expect(authQueryState?.isInvalidated).toBe(true);
     expect(profileQueryState?.isInvalidated).toBe(true);
+    expect(mentorQueryState?.isInvalidated).toBe(true);
   });
 
   it('does NOT automatically retry failed POST requests (retry: false)', async () => {

@@ -3,6 +3,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { clearPrivateUserCache, clearPrivateUserCacheSync } from './auth-cache';
 import { authKeys } from './query-keys';
 import { userKeys } from '@/features/user/query-keys';
+import { mentorKeys } from '@/features/mentor/query-keys';
 import { masterDataKeys } from '@/features/master-data/query-keys';
 import { AUTH_EXPIRED_EVENT } from './auth-events';
 import { setAccessToken, clearAccessToken } from './store/access-token';
@@ -54,10 +55,11 @@ describe('Cross-Session Cache Isolation & Security Suite', () => {
     });
   });
 
-  it('Scenario 13 & 14: Logout cleanup removes private auth and user queries while preserving public master-data', async () => {
+  it('Scenario 13 & 14: Logout cleanup removes private auth, user, and mentor queries while preserving public master-data', async () => {
     // 1. Seed private session data
     queryClient.setQueryData(authKeys.me(), userA);
     queryClient.setQueryData(userKeys.profile(), { bio: 'Private bio of user A' });
+    queryClient.setQueryData(mentorKeys.myApplication(), { mentorApplicationId: 'app-A' });
 
     // 2. Seed public master-data
     const publicSchools = [{ id: 'sch-1', name: 'Đại học Quốc Gia' }];
@@ -69,6 +71,7 @@ describe('Cross-Session Cache Isolation & Security Suite', () => {
     // Private cache must be removed
     expect(queryClient.getQueryData(authKeys.me())).toBeUndefined();
     expect(queryClient.getQueryData(userKeys.profile())).toBeUndefined();
+    expect(queryClient.getQueryData(mentorKeys.myApplication())).toBeUndefined();
 
     // Public master-data cache must remain untouched
     expect(queryClient.getQueryData(masterDataKeys.schools())).toEqual(publicSchools);
@@ -77,6 +80,7 @@ describe('Cross-Session Cache Isolation & Security Suite', () => {
   it('Scenario 15: HTTP 401 expiry removes private session data and prevents stale reuse', async () => {
     queryClient.setQueryData(authKeys.me(), userA);
     queryClient.setQueryData(userKeys.profile(), { bio: 'Secret user notes' });
+    queryClient.setQueryData(mentorKeys.myApplication(), { mentorApplicationId: 'app-secret' });
     queryClient.setQueryData(masterDataKeys.majorGroups(), [{ id: 'mg-1', name: 'CNTT' }]);
 
     // Execute synchronous or asynchronous cleanup triggered by auth-expiry
@@ -84,6 +88,7 @@ describe('Cross-Session Cache Isolation & Security Suite', () => {
 
     expect(queryClient.getQueryData(authKeys.me())).toBeUndefined();
     expect(queryClient.getQueryData(userKeys.profile())).toBeUndefined();
+    expect(queryClient.getQueryData(mentorKeys.myApplication())).toBeUndefined();
     // Master data retained
     expect(queryClient.getQueryData(masterDataKeys.majorGroups())).toBeDefined();
   });
@@ -94,6 +99,7 @@ describe('Cross-Session Cache Isolation & Security Suite', () => {
     useAuthStore.getState().setUser(userA);
     queryClient.setQueryData(authKeys.me(), userA);
     queryClient.setQueryData(userKeys.profile(), { fullName: 'User A', email: 'userA@mentify.vn' });
+    queryClient.setQueryData(mentorKeys.myApplication(), { mentorApplicationId: 'app-user-A' });
 
     // Switch to Session B: clear private cache first
     await clearPrivateUserCache(queryClient);
@@ -101,8 +107,9 @@ describe('Cross-Session Cache Isolation & Security Suite', () => {
     useAuthStore.getState().setUser(userB);
     queryClient.setQueryData(authKeys.me(), userB);
 
-    // Verify User B cannot observe User A's cached profile or me data
+    // Verify User B cannot observe User A's cached profile, me, or mentor application data
     expect(queryClient.getQueryData(userKeys.profile())).toBeUndefined();
+    expect(queryClient.getQueryData(mentorKeys.myApplication())).toBeUndefined();
     expect(queryClient.getQueryData(authKeys.me())).toEqual(userB);
     expect(queryClient.getQueryData(authKeys.me())).not.toEqual(userA);
   });
@@ -153,6 +160,7 @@ describe('Cross-Session Cache Isolation & Security Suite', () => {
 
   it('Scenario 19: Repeated cleanup is safe and idempotent', async () => {
     queryClient.setQueryData(authKeys.me(), userA);
+    queryClient.setQueryData(mentorKeys.myApplication(), { mentorApplicationId: 'app-A' });
 
     await clearPrivateUserCache(queryClient);
     await clearPrivateUserCache(queryClient);
@@ -160,5 +168,6 @@ describe('Cross-Session Cache Isolation & Security Suite', () => {
 
     expect(queryClient.getQueryData(authKeys.me())).toBeUndefined();
     expect(queryClient.getQueryData(userKeys.profile())).toBeUndefined();
+    expect(queryClient.getQueryData(mentorKeys.myApplication())).toBeUndefined();
   });
 });
