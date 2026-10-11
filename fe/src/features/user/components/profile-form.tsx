@@ -11,7 +11,7 @@ import { MajorGroupSelect } from '@/features/master-data/components/major-group-
 import { useUserProfile } from '../hooks/use-user-profile';
 import { UserType, USER_TYPE_LABELS, USER_TYPE_ORDER } from '@/shared/types/domain-enums';
 import { parseError } from '@/core/errors/error-handler';
-import { CheckCircle2, AlertCircle, ShieldAlert, UserCheck, ArrowUpRight } from 'lucide-react';
+import { CheckCircle2, AlertCircle, ShieldAlert, UserCheck } from 'lucide-react';
 
 export function ProfileForm() {
   const { profile, isLoading, isUpdating, updateProfile } = useUserProfile();

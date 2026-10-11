@@ -1,5 +1,4 @@
 import { apiClient } from '@/core/http/api-client';
-import type { ApiResponse } from '@/core/types/api';
 import type {
   RecordConsentRequest,
   UpdateProfileRequest,

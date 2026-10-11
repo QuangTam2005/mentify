@@ -1,6 +1,5 @@
 import { apiClient } from '@/core/http/api-client';
 import { isDevLoginEnabled } from '@/core/config/env';
-import type { ApiResponse } from '@/core/types/api';
 import type {
   AuthMeResponse,
   DevLoginRequest,

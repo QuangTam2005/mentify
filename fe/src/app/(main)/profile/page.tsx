@@ -5,10 +5,9 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { ProfileForm } from '@/features/user/components/profile-form';
 import { ConsentModal } from '@/features/user/components/consent-modal';
 import { Button } from '@/shared/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import { Badge } from '@/shared/components/ui/badge';
 import { USER_TYPE_LABELS, MENTOR_STATUS_LABELS } from '@/shared/types/domain-enums';
-import { ShieldCheck, UserCheck, AlertTriangle, LogIn } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, LogIn } from 'lucide-react';
 import Link from 'next/link';
 
 export default function ProfilePage() {

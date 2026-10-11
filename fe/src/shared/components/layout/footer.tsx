@@ -1,6 +1,5 @@
 import React from 'react';
-import Link from 'next/link';
-import { Shield, Clock, Heart } from 'lucide-react';
+import { Shield, Clock } from 'lucide-react';
 
 export function Footer() {
   return (

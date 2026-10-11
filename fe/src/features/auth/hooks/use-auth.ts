@@ -21,7 +21,7 @@ export function useAuth() {
       try {
         const res = await authApi.getMe();
         return res.data;
-      } catch (err: unknown) {
+      } catch {
         // Nếu 401 Unauthenticated, JWT rỗng hoặc hết hạn
         return null;
       }

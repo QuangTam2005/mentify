@@ -15,10 +15,6 @@ import { consumeReturnUrl, isSafeReturnUrl } from '../auth-navigation';
 import { isDevLoginEnabled } from '@/core/config/env';
 
 export function DevLoginPanel() {
-  if (!isDevLoginEnabled()) {
-    return null;
-  }
-
   const router = useRouter();
   const { devLogin, isPendingLogin, user } = useAuth();
 
@@ -27,6 +23,10 @@ export function DevLoginPanel() {
   const [userType, setUserType] = useState<UserType>(UserType.UNIVERSITY_STUDENT);
   const [role, setRole] = useState<UserRole>(UserRole.USER);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  if (!isDevLoginEnabled()) {
+    return null;
+  }
 
   const handleDevLogin = async (e: React.FormEvent) => {
     e.preventDefault();
