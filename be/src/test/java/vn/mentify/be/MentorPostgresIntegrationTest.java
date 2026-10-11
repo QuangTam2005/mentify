@@ -56,6 +56,12 @@ class MentorPostgresIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired
     private MentorApplicationRepository mentorApplicationRepository;
 
+    @Autowired
+    private vn.mentify.be.modules.mentor.service.MentorApplicationService mentorApplicationService;
+
+    @Autowired
+    private org.springframework.transaction.PlatformTransactionManager transactionManager;
+
     @BeforeEach
     void cleanData() {
         mentorApplicationRepository.deleteAll();
@@ -288,6 +294,124 @@ class MentorPostgresIntegrationTest extends AbstractPostgresIntegrationTest {
         userRepository.flush();
 
         assertThat(mentorProfileRepository.count()).isZero();
+        assertThat(mentorApplicationRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("Service: Successful initial submission persists profile, single application with attempt 1, PENDING status, and acceptingBookings=false")
+    void service_successfulInitialSubmissionPersistsExpectedState() {
+        UserEntity user = TestFixtures.saveUser(
+                userRepository,
+                "submit-success@mentify.vn",
+                UserType.UNIVERSITY_STUDENT,
+                UserRole.USER);
+
+        SchoolEntity school = schoolRepository.findAll().stream().findFirst().orElse(null);
+        MajorGroupEntity majorGroup = majorGroupRepository.findAll().stream().findFirst().orElse(null);
+
+        var command = new vn.mentify.be.modules.mentor.dto.SubmitMentorApplicationCommand(
+                school != null ? school.getId() : null,
+                majorGroup != null ? majorGroup.getCode() : null,
+                "Kỹ thuật phần mềm",
+                "Sinh viên năm 4 đam mê chia sẻ định hướng",
+                "Java, Spring, Clean Architecture",
+                "https://meet.google.com/test-meet"
+        );
+
+        var result = mentorApplicationService.submitInitialApplication(user.getId(), command);
+
+        assertThat(result).isNotNull();
+        assertThat(result.userId()).isEqualTo(user.getId());
+        assertThat(result.mentorStatus()).isEqualTo(MentorStatus.PENDING);
+        assertThat(result.applicationStatus()).isEqualTo(MentorApplicationStatus.PENDING);
+        assertThat(result.attemptNumber()).isEqualTo(1);
+        assertThat(result.appliedUserType()).isEqualTo("UNIVERSITY_STUDENT");
+        assertThat(result.acceptingBookings()).isFalse();
+
+        // Verify DB persistence
+        MentorProfileEntity profile = mentorProfileRepository.findByUserId(user.getId()).orElseThrow();
+        assertThat(profile.getMentorStatus()).isEqualTo(MentorStatus.PENDING);
+        assertThat(profile.isAcceptingBookings()).isFalse();
+        assertThat(profile.getBio()).isEqualTo("Sinh viên năm 4 đam mê chia sẻ định hướng");
+        assertThat(profile.getDefaultMeetingLink()).isEqualTo("https://meet.google.com/test-meet");
+
+        List<MentorApplicationEntity> apps = mentorApplicationRepository
+                .findByMentorProfileIdOrderByAttemptNumberDesc(profile.getId());
+        assertThat(apps).hasSize(1);
+        MentorApplicationEntity app = apps.getFirst();
+        assertThat(app.getStatus()).isEqualTo(MentorApplicationStatus.PENDING);
+        assertThat(app.getAttemptNumber()).isEqualTo(1);
+        assertThat(app.getAppliedUserType()).isEqualTo("UNIVERSITY_STUDENT");
+        assertThat(app.getSubmittedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Service: Ineligible SCHOOL_STUDENT user creates no mentor profile or application")
+    void service_ineligibleUserCreatesNoRecords() {
+        UserEntity student = TestFixtures.saveUser(
+                userRepository,
+                "high-schooler@mentify.vn",
+                UserType.SCHOOL_STUDENT,
+                UserRole.USER);
+
+        var command = new vn.mentify.be.modules.mentor.dto.SubmitMentorApplicationCommand(
+                null, null, null, "Học sinh THPT muốn làm mentor", null, null);
+
+        assertThatThrownBy(() -> mentorApplicationService.submitInitialApplication(student.getId(), command))
+                .isInstanceOf(vn.mentify.be.shared.api.ApiException.class)
+                .satisfies(ex -> {
+                    var apiEx = (vn.mentify.be.shared.api.ApiException) ex;
+                    assertThat(apiEx.getErrorCode()).isEqualTo(vn.mentify.be.shared.api.ApiErrorCode.FORBIDDEN);
+                });
+
+        assertThat(mentorProfileRepository.findByUserId(student.getId())).isEmpty();
+        assertThat(mentorApplicationRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("Service: Duplicate submission does not create additional records or attempts")
+    void service_duplicateSubmissionDoesNotCreateAdditionalRecords() {
+        UserEntity user = TestFixtures.saveUser(
+                userRepository,
+                "dup-submitter@mentify.vn",
+                UserType.WORKING_PROFESSIONAL,
+                UserRole.USER);
+
+        var command = new vn.mentify.be.modules.mentor.dto.SubmitMentorApplicationCommand(
+                null, null, null, "Chuyên viên phần mềm", "Backend", null);
+
+        mentorApplicationService.submitInitialApplication(user.getId(), command);
+        assertThat(mentorProfileRepository.count()).isEqualTo(1);
+        assertThat(mentorApplicationRepository.count()).isEqualTo(1);
+
+        // Second submission attempt must fail with ConflictException
+        assertThatThrownBy(() -> mentorApplicationService.submitInitialApplication(user.getId(), command))
+                .isInstanceOf(vn.mentify.be.shared.api.ConflictException.class);
+
+        assertThat(mentorProfileRepository.count()).isEqualTo(1);
+        assertThat(mentorApplicationRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Service: Transaction rollback prevents partial persistence on failure")
+    void service_transactionRollbackPreventsPartialPersistence() {
+        UserEntity user = TestFixtures.saveUser(
+                userRepository,
+                "rollback-test@mentify.vn",
+                UserType.WORKING_PROFESSIONAL,
+                UserRole.USER);
+
+        var command = new vn.mentify.be.modules.mentor.dto.SubmitMentorApplicationCommand(
+                null, null, null, "Rollback candidate", null, null);
+
+        var txTemplate = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+
+        assertThatThrownBy(() -> txTemplate.executeWithoutResult(status -> {
+            mentorApplicationService.submitInitialApplication(user.getId(), command);
+            throw new IllegalStateException("Simulated business transaction failure");
+        })).isInstanceOf(IllegalStateException.class);
+
+        assertThat(mentorProfileRepository.findByUserId(user.getId())).isEmpty();
         assertThat(mentorApplicationRepository.count()).isZero();
     }
 }
