@@ -3,7 +3,7 @@
 ## Current user's application
 
 - **Method:** `GET`
-- **Path:** `/api/v1/mentor/applications/me` (alias: `/api/mentor/applications/me`)
+- **Path:** `/api/v1/mentor/applications/me`
 - **Authentication:** required. Send `Authorization: Bearer <JWT>`.
 - **Success:** `200 OK`, wrapped in `ApiSuccessResponse<CurrentMentorApplicationResponse>`.
 
@@ -42,4 +42,4 @@ Only applicant-facing application snapshot fields are returned. Review notes and
 - `403 FORBIDDEN`: authenticated account is locked or otherwise denied by security policy.
 - `404 RESOURCE_NOT_FOUND`: the authenticated user has no mentor application.
 
-The existing submission route remains `POST /api/v1/mentor/applications` (alias `/api/mentor/applications`) and keeps its existing response and duplicate-submission behavior.
+The submission route is `POST /api/v1/mentor/applications` and keeps its existing response and duplicate-submission behavior.
