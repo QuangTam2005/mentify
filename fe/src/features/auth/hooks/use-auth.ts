@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { authApi } from '../api/auth-api';
 import { useAuthStore } from '../store/auth-store';
-import { clearAccessToken, setAccessToken } from '../store/access-token';
+import { clearAccessToken, getAccessToken, setAccessToken } from '../store/access-token';
+import { ApiError } from '@/core/errors/api-error';
 import type { DevLoginRequest } from '../types/auth.types';
 
 export const AUTH_QUERY_KEYS = {
@@ -13,7 +14,8 @@ export const AUTH_QUERY_KEYS = {
 
 export function useAuth() {
   const queryClient = useQueryClient();
-  const { user, isAuthenticated, isInitialized, setUser, clearUser } = useAuthStore();
+  const { user, isAuthenticated, isInitialized, setUser, clearUser, setInitialized } = useAuthStore();
+  const hasToken = !!getAccessToken();
 
   const meQuery = useQuery({
     queryKey: AUTH_QUERY_KEYS.me,
@@ -21,22 +23,34 @@ export function useAuth() {
       try {
         const res = await authApi.getMe();
         return res.data;
-      } catch {
-        // Nếu 401 Unauthenticated, JWT rỗng hoặc hết hạn
-        return null;
+      } catch (err) {
+        if (err instanceof ApiError && err.isUnauthenticated()) {
+          return null;
+        }
+        throw err;
       }
     },
+    enabled: hasToken,
     staleTime: 5 * 60 * 1000,
   });
+
+  // Mark initialized if no token exists without waiting for query
+  useEffect(() => {
+    if (!hasToken && !isInitialized) {
+      setInitialized(true);
+    }
+  }, [hasToken, isInitialized, setInitialized]);
 
   // Đồng bộ thông tin người dùng từ query vào Zustand store
   useEffect(() => {
     if (meQuery.isSuccess) {
       setUser(meQuery.data);
     } else if (meQuery.isError) {
-      clearUser();
+      if (meQuery.error instanceof ApiError && meQuery.error.isUnauthenticated()) {
+        clearUser();
+      }
     }
-  }, [meQuery.isSuccess, meQuery.isError, meQuery.data, setUser, clearUser]);
+  }, [meQuery.isSuccess, meQuery.isError, meQuery.error, meQuery.data, setUser, clearUser]);
 
   const devLoginMutation = useMutation({
     mutationFn: async (payload: DevLoginRequest) => {
@@ -66,9 +80,11 @@ export function useAuth() {
   });
 
   return {
-    user: user || meQuery.data,
+    user: user || meQuery.data || null,
     isAuthenticated: isAuthenticated || !!meQuery.data,
-    isLoading: meQuery.isLoading && !isInitialized,
+    isLoading: (meQuery.isLoading && !isInitialized) || (!hasToken && !isInitialized),
+    isError: meQuery.isError,
+    error: meQuery.error,
     isPendingLogin: devLoginMutation.isPending,
     isPendingLogout: logoutMutation.isPending,
     devLogin: devLoginMutation.mutateAsync,
