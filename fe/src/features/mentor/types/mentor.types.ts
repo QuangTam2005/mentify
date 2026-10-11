@@ -18,6 +18,8 @@ export interface SubmitMentorApplicationRequest {
   defaultMeetingLink?: string;
 }
 
+export type ResubmitMentorApplicationRequest = SubmitMentorApplicationRequest;
+
 export interface MentorApplicationSubmissionResponse {
   mentorProfileId: string;
   mentorApplicationId: string;

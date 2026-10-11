@@ -53,6 +53,7 @@ vi.mock('@/features/master-data/api/master-data-api', () => ({
 vi.mock('../api/mentor-api', () => ({
   mentorApi: {
     submitApplication: vi.fn(),
+    resubmitApplication: vi.fn(),
     getCurrentApplication: vi.fn(),
   },
 }));
@@ -217,5 +218,120 @@ describe('MentorApplyContainer Integration Suite', () => {
     expect(screen.getByText('Custom unusual error occurred')).toBeInTheDocument();
     // Form is NEVER shown for unknown errors!
     expect(screen.queryByRole('button', { name: /Gửi đơn ứng tuyển/i })).not.toBeInTheDocument();
+  });
+
+  it('allows REJECTED applicant to enter resubmission mode and renders prefilled form', async () => {
+    const mockRejectedApp: CurrentMentorApplicationResponse = {
+      ...mockExistingApp,
+      applicationStatus: 'REJECTED',
+      mentorStatus: MentorStatus.REJECTED,
+      customMajorName: 'Công nghệ thông tin',
+      bio: 'Tiểu sử trước đó đã nộp',
+    };
+
+    vi.mocked(mentorApi.getCurrentApplication).mockResolvedValueOnce({
+      success: true,
+      data: mockRejectedApp,
+      meta: null,
+      timestamp: '2026-10-11T12:00:00Z',
+      requestId: 'req-rej',
+    });
+
+    renderWithClient(<MentorApplyContainer />);
+
+    // Initially displays status card
+    await waitFor(() => {
+      expect(screen.getByText('Hồ sơ đã bị từ chối')).toBeInTheDocument();
+    });
+
+    const resubmitBtn = screen.getByRole('button', { name: /Nộp lại hồ sơ/i });
+    expect(resubmitBtn).toBeInTheDocument();
+
+    // Click Nộp lại hồ sơ to enter resubmission mode
+    fireEvent.click(resubmitBtn);
+
+    // Form is displayed in resubmission mode
+    expect(screen.getByText('Nộp lại hồ sơ ứng tuyển Mentor')).toBeInTheDocument();
+    expect(screen.getByText('Giai đoạn nộp lại hồ sơ')).toBeInTheDocument();
+
+    // Prefilled fields
+    expect(screen.getByDisplayValue('Công nghệ thông tin')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Tiểu sử trước đó đã nộp')).toBeInTheDocument();
+
+    // Missing fields from GET response are NOT fabricated
+    const expertiseInput = screen.getByLabelText(/Lĩnh vực chuyên môn & Kỹ năng hướng dẫn/i);
+    expect((expertiseInput as HTMLTextAreaElement).value).toBe('');
+
+    // Cancel action is available and returns to status view
+    const cancelBtn = screen.getByRole('button', { name: /Hủy bỏ/i });
+    expect(cancelBtn).toBeInTheDocument();
+
+    fireEvent.click(cancelBtn);
+    expect(screen.getByText('Hồ sơ đã bị từ chối')).toBeInTheDocument();
+    expect(screen.queryByText('Nộp lại hồ sơ ứng tuyển Mentor')).not.toBeInTheDocument();
+  });
+
+  it('submits resubmission to POST /api/v1/mentor/applications/resubmit and displays success view', async () => {
+    const mockRejectedApp: CurrentMentorApplicationResponse = {
+      ...mockExistingApp,
+      applicationStatus: 'REJECTED',
+      mentorStatus: MentorStatus.REJECTED,
+      customMajorName: 'Khoa học máy tính',
+      bio: 'Tiểu sử đã có',
+    };
+
+    vi.mocked(mentorApi.getCurrentApplication).mockResolvedValueOnce({
+      success: true,
+      data: mockRejectedApp,
+      meta: null,
+      timestamp: '2026-10-11T12:00:00Z',
+      requestId: 'req-rej-2',
+    });
+
+    vi.mocked(mentorApi.resubmitApplication).mockResolvedValueOnce({
+      success: true,
+      data: {
+        mentorProfileId: 'prof-existing-1',
+        mentorApplicationId: 'app-resubmit-new',
+        userId: 'usr-1',
+        mentorStatus: MentorStatus.PENDING,
+        applicationStatus: 'PENDING',
+        attemptNumber: 2,
+        appliedUserType: 'UNIVERSITY_STUDENT',
+        acceptingBookings: false,
+        submittedAt: '2026-10-11T16:00:00Z',
+      },
+      meta: null,
+      timestamp: '2026-10-11T16:00:00Z',
+      requestId: 'req-resubmit-ok',
+    });
+
+    renderWithClient(<MentorApplyContainer />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Nộp lại hồ sơ/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Nộp lại hồ sơ/i }));
+
+    // Fill in required expertise
+    fireEvent.change(screen.getByLabelText(/Lĩnh vực chuyên môn & Kỹ năng hướng dẫn/i), {
+      target: { value: 'Lập trình frontend với React và Next.js' },
+    });
+
+    // Submit resubmission
+    const submitBtn = screen.getByRole('button', { name: /Nộp lại hồ sơ/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(mentorApi.resubmitApplication).toHaveBeenCalledTimes(1);
+    });
+
+    // Success view shows new attempt details
+    await waitFor(() => {
+      expect(screen.getByText('Hồ sơ nộp lại đã được tiếp nhận!')).toBeInTheDocument();
+      expect(screen.getByText(/Lần thứ 2/i)).toBeInTheDocument();
+      expect(screen.getByText('app-resubmit-new')).toBeInTheDocument();
+    });
   });
 });

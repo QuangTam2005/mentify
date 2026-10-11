@@ -8,7 +8,13 @@ import type {
 export const mentorApi = {
   submitApplication: (payload: SubmitMentorApplicationRequest) => {
     return apiClient.post<MentorApplicationSubmissionResponse>(
-      '/api/v1/mentor/applications',
+       '/api/v1/mentor/applications',
+       payload
+     );
+   },
+  resubmitApplication: (payload: SubmitMentorApplicationRequest) => {
+    return apiClient.post<MentorApplicationSubmissionResponse>(
+      '/api/v1/mentor/applications/resubmit',
       payload
     );
   },

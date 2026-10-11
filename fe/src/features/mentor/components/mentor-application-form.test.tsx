@@ -6,7 +6,10 @@ import { MentorApplicationForm } from './mentor-application-form';
 import { mentorApi } from '../api/mentor-api';
 import { ApiError } from '@/core/errors/api-error';
 import { MentorStatus } from '@/shared/types/domain-enums';
-import type { MentorApplicationSubmissionResponse } from '../types/mentor.types';
+import type {
+  MentorApplicationSubmissionResponse,
+  CurrentMentorApplicationResponse,
+} from '../types/mentor.types';
 import type { ApiResponse } from '@/core/types/api';
 
 // Mock router
@@ -53,6 +56,7 @@ vi.mock('@/features/master-data/api/master-data-api', () => ({
 vi.mock('../api/mentor-api', () => ({
   mentorApi: {
     submitApplication: vi.fn(),
+    resubmitApplication: vi.fn(),
   },
 }));
 
@@ -592,5 +596,251 @@ describe('MentorApplicationForm Component', () => {
     const backButton = screen.getByRole('button', { name: /Quay lại/i });
     fireEvent.click(backButton);
     expect(mockPush).toHaveBeenCalledWith('/profile');
+  });
+
+  // Scenario 15: Resubmission mode rendering & prefilling
+  it('Scenario 15: Renders resubmission mode with prefilled values, empty expertise/link, and helper note', async () => {
+    const mockInitialData: CurrentMentorApplicationResponse = {
+      mentorProfileId: 'prof-existing-1',
+      mentorApplicationId: 'app-old-1',
+      mentorStatus: MentorStatus.REJECTED,
+      applicationStatus: 'REJECTED',
+      attemptNumber: 1,
+      appliedUserType: 'UNIVERSITY_STUDENT',
+      schoolId: 'sch-uuid-1',
+      majorGroupCode: '4801',
+      customMajorName: 'Khoa học máy tính & AI',
+      bio: 'Tiểu sử trước đây đã viết rất chi tiết.',
+      acceptingBookings: false,
+      submittedAt: '2026-10-10T10:00:00Z',
+    };
+
+    renderWithClient(
+      <MentorApplicationForm mode="resubmit" initialData={mockInitialData} />
+    );
+
+    // Title & badge indicate resubmission mode
+    expect(screen.getByText('Nộp lại hồ sơ ứng tuyển Mentor')).toBeInTheDocument();
+    expect(screen.getByText('Giai đoạn nộp lại hồ sơ')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Nộp lại hồ sơ/i })).toBeInTheDocument();
+
+    // Prefilled values
+    expect(screen.getByDisplayValue('Khoa học máy tính & AI')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Tiểu sử trước đây đã viết rất chi tiết.')).toBeInTheDocument();
+
+    // Absent fields from GET response are NOT fabricated
+    const expertiseInput = screen.getByLabelText(
+      /Lĩnh vực chuyên môn & Kỹ năng hướng dẫn/i
+    ) as HTMLTextAreaElement;
+    expect(expertiseInput.value).toBe('');
+
+    const meetingLinkInput = screen.getByLabelText(
+      /Liên kết phòng họp trực tuyến mặc định/i
+    ) as HTMLInputElement;
+    expect(meetingLinkInput.value).toBe('');
+
+    // Explanatory note for re-entering expertise
+    expect(
+      screen.getByText(/Lĩnh vực chuyên môn và liên kết phòng họp không nằm trong bản tóm tắt hồ sơ/i)
+    ).toBeInTheDocument();
+  });
+
+  // Scenario 16: Successful resubmission calls POST /api/v1/mentor/applications/resubmit
+  it('Scenario 16: Submits to resubmission endpoint, prevents rapid double-clicks, and shows success view', async () => {
+    const mockInitialData: CurrentMentorApplicationResponse = {
+      mentorProfileId: 'prof-existing-1',
+      mentorApplicationId: 'app-old-1',
+      mentorStatus: MentorStatus.REJECTED,
+      applicationStatus: 'REJECTED',
+      attemptNumber: 1,
+      appliedUserType: 'UNIVERSITY_STUDENT',
+      schoolId: 'sch-uuid-1',
+      majorGroupCode: '4801',
+      customMajorName: 'Kỹ thuật máy tính',
+      bio: 'Tiểu sử cập nhật',
+      acceptingBookings: false,
+      submittedAt: '2026-10-10T10:00:00Z',
+    };
+
+    const resubmitOkResponse: MentorApplicationSubmissionResponse = {
+      mentorProfileId: 'prof-existing-1',
+      mentorApplicationId: 'app-resubmit-new-uuid',
+      userId: 'usr-1',
+      mentorStatus: MentorStatus.PENDING,
+      applicationStatus: 'PENDING',
+      attemptNumber: 2,
+      appliedUserType: 'UNIVERSITY_STUDENT',
+      acceptingBookings: false,
+      submittedAt: '2026-10-11T16:00:00Z',
+    };
+
+    let resolveMutation!: (val: ApiResponse<MentorApplicationSubmissionResponse>) => void;
+    vi.mocked(mentorApi.resubmitApplication).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveMutation = resolve;
+        })
+    );
+
+    const onCancelMock = vi.fn();
+    const onSuccessMock = vi.fn();
+
+    renderWithClient(
+      <MentorApplicationForm
+        mode="resubmit"
+        initialData={mockInitialData}
+        onCancel={onCancelMock}
+        onSuccess={onSuccessMock}
+      />
+    );
+
+    // Enter required expertise
+    fireEvent.change(screen.getByLabelText(/Lĩnh vực chuyên môn & Kỹ năng hướng dẫn/i), {
+      target: { value: 'Frontend Development, TanStack Query, Next.js' },
+    });
+
+    const submitBtn = screen.getByRole('button', { name: /Nộp lại hồ sơ/i });
+
+    // Click twice rapidly to verify double-submit protection
+    act(() => {
+      fireEvent.click(submitBtn);
+      fireEvent.click(submitBtn);
+    });
+
+    await waitFor(() => {
+      expect(mentorApi.resubmitApplication).toHaveBeenCalledTimes(1);
+    });
+
+    // Resolve mutation
+    await act(async () => {
+      resolveMutation({
+        success: true,
+        data: resubmitOkResponse,
+        meta: null,
+        timestamp: '2026-10-11T16:00:00Z',
+        requestId: 'req-ok',
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Hồ sơ nộp lại đã được tiếp nhận!')).toBeInTheDocument();
+      expect(screen.getByText(/Lần thứ 2/i)).toBeInTheDocument();
+      expect(screen.getByText('app-resubmit-new-uuid')).toBeInTheDocument();
+    });
+
+    expect(onSuccessMock).toHaveBeenCalledWith(resubmitOkResponse);
+
+    // Clicking "Xem trạng thái hồ sơ" triggers onCancel callback
+    const viewStatusBtn = screen.getByRole('button', { name: /Xem trạng thái hồ sơ/i });
+    fireEvent.click(viewStatusBtn);
+    expect(onCancelMock).toHaveBeenCalledTimes(1);
+  });
+
+  // Scenario 17: HTTP 400 validation error in resubmission mode displays errors and preserves input
+  it('Scenario 17: HTTP 400 validation error in resubmission mode displays error and preserves input', async () => {
+    vi.mocked(mentorApi.resubmitApplication).mockRejectedValueOnce(
+      new ApiError(400, {
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Dữ liệu không hợp lệ',
+          details: [{ field: 'bio', message: 'Tiểu sử chứa từ ngữ không hợp lệ' }],
+        },
+      })
+    );
+
+    renderWithClient(
+      <MentorApplicationForm
+        mode="resubmit"
+        initialData={{
+          mentorProfileId: 'prof-1',
+          mentorApplicationId: 'app-1',
+          mentorStatus: MentorStatus.REJECTED,
+          applicationStatus: 'REJECTED',
+          attemptNumber: 1,
+          appliedUserType: 'UNIVERSITY_STUDENT',
+          schoolId: null,
+          majorGroupCode: null,
+          customMajorName: 'Toán tin',
+          bio: 'Tiểu sử cần sửa',
+          acceptingBookings: false,
+          submittedAt: '2026-10-10T10:00:00Z',
+        }}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/Lĩnh vực chuyên môn & Kỹ năng hướng dẫn/i), {
+      target: { value: 'Toán ứng dụng' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Nộp lại hồ sơ/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Tiểu sử chứa từ ngữ không hợp lệ')).toBeInTheDocument();
+    });
+
+    // Inputs are strictly preserved
+    expect(screen.getByDisplayValue('Toán tin')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Tiểu sử cần sửa')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Toán ứng dụng')).toBeInTheDocument();
+  });
+
+  // Scenario 18: HTTP 409 Conflict displays alert banner and preserves values
+  it('Scenario 18: HTTP 409 Conflict displays conflict alert and preserves entered values', async () => {
+    vi.mocked(mentorApi.resubmitApplication).mockRejectedValueOnce(
+      new ApiError(409, {
+        error: {
+          code: 'CONFLICT',
+          message: 'Chỉ có thể nộp lại đơn mentor bị từ chối',
+        },
+      })
+    );
+
+    renderWithClient(
+      <MentorApplicationForm
+        mode="resubmit"
+        initialData={{
+          mentorProfileId: 'prof-1',
+          mentorApplicationId: 'app-1',
+          mentorStatus: MentorStatus.REJECTED,
+          applicationStatus: 'REJECTED',
+          attemptNumber: 1,
+          appliedUserType: 'UNIVERSITY_STUDENT',
+          schoolId: null,
+          majorGroupCode: null,
+          customMajorName: null,
+          bio: 'Tiểu sử',
+          acceptingBookings: false,
+          submittedAt: '2026-10-10T10:00:00Z',
+        }}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/Lĩnh vực chuyên môn & Kỹ năng hướng dẫn/i), {
+      target: { value: 'Kỹ năng chuyên môn' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Nộp lại hồ sơ/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Chỉ có thể nộp lại đơn mentor bị từ chối')).toBeInTheDocument();
+    });
+
+    // Inputs preserved
+    expect(screen.getByDisplayValue('Kỹ năng chuyên môn')).toBeInTheDocument();
+  });
+
+  // Scenario 19: onCancel prop triggers cancellation in resubmit mode
+  it('Scenario 19: onCancel button triggers onCancel callback in resubmit mode', async () => {
+    const onCancelMock = vi.fn();
+    renderWithClient(
+      <MentorApplicationForm mode="resubmit" onCancel={onCancelMock} />
+    );
+
+    const cancelBtn = screen.getByRole('button', { name: /Hủy bỏ/i });
+    expect(cancelBtn).toBeInTheDocument();
+
+    fireEvent.click(cancelBtn);
+    expect(onCancelMock).toHaveBeenCalledTimes(1);
+    expect(mockPush).not.toHaveBeenCalled();
   });
 });

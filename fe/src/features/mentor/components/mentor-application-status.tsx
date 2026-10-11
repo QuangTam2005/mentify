@@ -20,20 +20,24 @@ import {
   GraduationCap,
   FileText,
   Calendar,
+  RotateCcw,
 } from 'lucide-react';
 
 export interface MentorApplicationStatusProps {
   application: CurrentMentorApplicationResponse;
   onRefresh?: () => void;
   isRefreshing?: boolean;
+  onResubmit?: () => void;
 }
 
 export function MentorApplicationStatus({
   application,
   onRefresh,
   isRefreshing = false,
+  onResubmit,
 }: MentorApplicationStatusProps) {
   const router = useRouter();
+  const isSuspended = application.mentorStatus === 'SUSPENDED';
 
   const getStatusConfig = (status: AppStatusType) => {
     switch (status) {
@@ -91,7 +95,9 @@ export function MentorApplicationStatus({
             <div className="rounded-xl border border-rose-200/80 bg-rose-50/80 p-4 text-xs text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200">
               <p className="font-semibold text-sm mb-1">Thông tin nộp lại đơn</p>
               <p className="leading-relaxed">
-                Hồ sơ lần này chưa được duyệt. Chức năng nộp lại hồ sơ (Resubmission) sẽ được hỗ trợ trong các phiên bản cập nhật tiếp theo. Quý ứng viên vui lòng theo dõi thông báo và quay lại sau.
+                {onResubmit && !isSuspended
+                  ? "Hồ sơ lần này chưa được duyệt. Bạn có thể chọn 'Nộp lại hồ sơ' bên dưới để cập nhật thông tin và gửi lại đơn ứng tuyển cho Ban quản trị xem xét."
+                  : 'Hồ sơ lần này chưa được duyệt. Chức năng nộp lại hồ sơ (Resubmission) sẽ được hỗ trợ trong các phiên bản cập nhật tiếp theo. Quý ứng viên vui lòng theo dõi thông báo và quay lại sau.'}
               </p>
             </div>
           ),
@@ -118,7 +124,6 @@ export function MentorApplicationStatus({
 
   const statusConfig = getStatusConfig(application.applicationStatus);
   const StatusIcon = statusConfig.icon;
-  const isSuspended = application.mentorStatus === 'SUSPENDED';
 
   return (
     <Card className="border-border shadow-md">
@@ -242,6 +247,17 @@ export function MentorApplicationStatus({
 
         {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row gap-3 pt-2 justify-center">
+          {application.applicationStatus === 'REJECTED' && !isSuspended && onResubmit && (
+            <Button
+              type="button"
+              onClick={onResubmit}
+              className="w-full sm:w-auto"
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Nộp lại hồ sơ
+            </Button>
+          )}
+
           {onRefresh && (
             <Button
               type="button"

@@ -9,11 +9,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/sha
 import { Badge } from '@/shared/components/ui/badge';
 import { SchoolSelect } from '@/features/master-data/components/school-select';
 import { MajorGroupSelect } from '@/features/master-data/components/major-group-select';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { useSubmitMentorApplication } from '../hooks/use-mentor-application';
+import {
+  useSubmitMentorApplication,
+  useResubmitMentorApplication,
+} from '../hooks/use-mentor-application';
+import { mentorKeys } from '../query-keys';
+import { ApiError } from '@/core/errors/api-error';
 import type {
   SubmitMentorApplicationRequest,
   MentorApplicationSubmissionResponse,
+  CurrentMentorApplicationResponse,
 } from '../types/mentor.types';
 import { parseError } from '@/core/errors/error-handler';
 import {
@@ -26,18 +33,46 @@ import {
   FileCheck2,
   Clock,
   Sparkles,
+  RotateCcw,
 } from 'lucide-react';
 
-export function MentorApplicationForm() {
+export type MentorApplicationFormMode = 'initial' | 'resubmit';
+
+export interface MentorApplicationFormProps {
+  mode?: MentorApplicationFormMode;
+  initialData?: CurrentMentorApplicationResponse | null;
+  onCancel?: () => void;
+  onSuccess?: (response: MentorApplicationSubmissionResponse) => void;
+}
+
+export function MentorApplicationForm({
+  mode = 'initial',
+  initialData = null,
+  onCancel,
+  onSuccess,
+}: MentorApplicationFormProps = {}) {
   const router = useRouter();
   const { user } = useAuth();
-  const submitMutation = useSubmitMentorApplication();
+  const queryClient = useQueryClient();
 
-  // Form input states
-  const [schoolId, setSchoolId] = useState('');
-  const [majorGroupCode, setMajorGroupCode] = useState('');
-  const [customMajorName, setCustomMajorName] = useState('');
-  const [bio, setBio] = useState('');
+  const submitMutation = useSubmitMentorApplication();
+  const resubmitMutation = useResubmitMentorApplication();
+  const activeMutation = mode === 'resubmit' ? resubmitMutation : submitMutation;
+
+  // Form input states (prefilled from initialData when in resubmit mode)
+  const [schoolId, setSchoolId] = useState(
+    mode === 'resubmit' && initialData?.schoolId ? initialData.schoolId : ''
+  );
+  const [majorGroupCode, setMajorGroupCode] = useState(
+    mode === 'resubmit' && initialData?.majorGroupCode ? initialData.majorGroupCode : ''
+  );
+  const [customMajorName, setCustomMajorName] = useState(
+    mode === 'resubmit' && initialData?.customMajorName ? initialData.customMajorName : ''
+  );
+  const [bio, setBio] = useState(
+    mode === 'resubmit' && initialData?.bio ? initialData.bio : ''
+  );
+  // expertiseAreas and defaultMeetingLink are NOT present in GET response - never fabricated
   const [expertiseAreas, setExpertiseAreas] = useState('');
   const [defaultMeetingLink, setDefaultMeetingLink] = useState('');
 
@@ -98,7 +133,7 @@ export function MentorApplicationForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (submitMutation.isPending || isSubmittingRef.current) {
+    if (activeMutation.isPending || isSubmittingRef.current) {
       return;
     }
     setGeneralError(null);
@@ -118,8 +153,9 @@ export function MentorApplicationForm() {
 
     isSubmittingRef.current = true;
     try {
-      const response = await submitMutation.mutateAsync(payload);
+      const response = await activeMutation.mutateAsync(payload);
       setSubmissionSuccess(response);
+      onSuccess?.(response);
     } catch (err: unknown) {
       const parsed = parseError(err);
       if (parsed.fieldErrors && Object.keys(parsed.fieldErrors).length > 0) {
@@ -129,6 +165,11 @@ export function MentorApplicationForm() {
         title: parsed.title,
         message: parsed.message,
       });
+
+      // On 409 Conflict in resubmit mode, refresh current application query
+      if (err instanceof ApiError && err.status === 409) {
+        void queryClient.invalidateQueries({ queryKey: mentorKeys.myApplication() });
+      }
       // Important: Input values are strictly preserved on error
     } finally {
       isSubmittingRef.current = false;
@@ -144,10 +185,14 @@ export function MentorApplicationForm() {
             <CheckCircle2 className="h-10 w-10" />
           </div>
           <CardTitle className="text-2xl font-bold text-foreground">
-            Đơn ứng tuyển đã được tiếp nhận!
+            {mode === 'resubmit'
+              ? 'Hồ sơ nộp lại đã được tiếp nhận!'
+              : 'Đơn ứng tuyển đã được tiếp nhận!'}
           </CardTitle>
           <CardDescription className="text-sm text-muted-foreground mt-1">
-            Hồ sơ của bạn đã được ghi nhận thành công và chuyển vào quy trình xét duyệt của Mentify.
+            {mode === 'resubmit'
+              ? 'Đơn ứng tuyển mới của bạn đã được ghi nhận thành công và chuyển vào quy trình xét duyệt của Mentify.'
+              : 'Hồ sơ của bạn đã được ghi nhận thành công và chuyển vào quy trình xét duyệt của Mentify.'}
           </CardDescription>
         </CardHeader>
 
@@ -205,9 +250,20 @@ export function MentorApplicationForm() {
 
           {/* Action buttons */}
           <div className="flex flex-col sm:flex-row gap-3 pt-2 justify-center">
+            {mode === 'resubmit' && onCancel && (
+              <Button
+                type="button"
+                onClick={onCancel}
+                className="w-full sm:w-auto"
+              >
+                <FileCheck2 className="mr-2 h-4 w-4" />
+                Xem trạng thái hồ sơ
+              </Button>
+            )}
             <Button
               type="button"
               onClick={() => router.push('/profile')}
+              variant={mode === 'resubmit' && onCancel ? 'outline' : 'default'}
               className="w-full sm:w-auto"
             >
               <FileCheck2 className="mr-2 h-4 w-4" />
@@ -237,14 +293,18 @@ export function MentorApplicationForm() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
             <h2 className="text-xl font-bold text-foreground">
-              Đăng ký trở thành Mentor
+              {mode === 'resubmit'
+                ? 'Nộp lại hồ sơ ứng tuyển Mentor'
+                : 'Đăng ký trở thành Mentor'}
             </h2>
             <CardDescription className="text-xs text-muted-foreground mt-1">
-              Chia sẻ kinh nghiệm học tập, định hướng sự nghiệp và đồng hành cùng các bạn mentee trên Mentify
+              {mode === 'resubmit'
+                ? 'Cập nhật và hoàn thiện thông tin hồ sơ ứng tuyển để gửi Ban quản trị Mentify xét duyệt lại'
+                : 'Chia sẻ kinh nghiệm học tập, định hướng sự nghiệp và đồng hành cùng các bạn mentee trên Mentify'}
             </CardDescription>
           </div>
           <Badge variant="outline" className="w-fit">
-            Giai đoạn nộp đơn
+            {mode === 'resubmit' ? 'Giai đoạn nộp lại hồ sơ' : 'Giai đoạn nộp đơn'}
           </Badge>
         </div>
       </CardHeader>
@@ -255,11 +315,15 @@ export function MentorApplicationForm() {
           <div className="flex items-start gap-2.5">
             <Info className="h-4 w-4 shrink-0 text-primary mt-0.5" />
             <div>
-              <p className="font-semibold text-primary">Quy trình đăng ký và xét duyệt:</p>
+              <p className="font-semibold text-primary">
+                {mode === 'resubmit'
+                  ? 'Quy trình nộp lại hồ sơ (Resubmission):'
+                  : 'Quy trình đăng ký và xét duyệt:'}
+              </p>
               <p className="text-muted-foreground mt-0.5 leading-relaxed">
-                Đơn đăng ký của bạn sẽ được chuyển đến Ban quản trị Mentify để xét duyệt. Quá trình xét
-                duyệt sẽ đánh giá sự phù hợp về lĩnh vực chuyên môn và kinh nghiệm thực tế.
-                Sau khi được chấp thuận, hồ sơ của bạn sẽ xuất hiện trên trang Danh sách Mentor.
+                {mode === 'resubmit'
+                  ? 'Hồ sơ trước đó của bạn đã bị từ chối. Bạn có thể cập nhật lại thông tin cần thiết và gửi lại đơn ứng tuyển. Sau khi gửi thành công, đơn mới sẽ chuyển về trạng thái Chờ xét duyệt (PENDING) để Ban quản trị đánh giá lại.'
+                  : 'Đơn đăng ký của bạn sẽ được chuyển đến Ban quản trị Mentify để xét duyệt. Quá trình xét duyệt sẽ đánh giá sự phù hợp về lĩnh vực chuyên môn và kinh nghiệm thực tế. Sau khi được chấp thuận, hồ sơ của bạn sẽ xuất hiện trên trang Danh sách Mentor.'}
               </p>
             </div>
           </div>
@@ -307,7 +371,7 @@ export function MentorApplicationForm() {
           noValidate
           onSubmit={handleSubmit}
           className="space-y-6"
-          aria-busy={submitMutation.isPending}
+          aria-busy={activeMutation.isPending}
         >
           {/* Education & Master Data Section */}
           <div className="space-y-4">
@@ -353,6 +417,16 @@ export function MentorApplicationForm() {
               2. Kỹ năng & Giới thiệu bản thân
             </h3>
 
+            {/* Expertise Areas Notice in Resubmission Mode */}
+            {mode === 'resubmit' && (
+              <div className="rounded-lg bg-sky-50 dark:bg-sky-950/40 p-2.5 text-xs text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-900/60 flex items-start gap-2">
+                <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-sky-600 dark:text-sky-400" />
+                <span>
+                  Lưu ý: Lĩnh vực chuyên môn và liên kết phòng họp không nằm trong bản tóm tắt hồ sơ trước đó. Vui lòng nhập lại thông tin chuyên môn của bạn.
+                </span>
+              </div>
+            )}
+
             {/* Expertise Areas */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
@@ -382,7 +456,7 @@ export function MentorApplicationForm() {
                 }`}
                 aria-invalid={!!fieldErrors.expertiseAreas}
                 aria-describedby={fieldErrors.expertiseAreas ? 'expertise-error' : undefined}
-                disabled={submitMutation.isPending}
+                disabled={activeMutation.isPending}
               />
               {fieldErrors.expertiseAreas ? (
                 <p id="expertise-error" className="text-xs text-destructive animate-in fade-in-50">
@@ -424,7 +498,7 @@ export function MentorApplicationForm() {
                 }`}
                 aria-invalid={!!fieldErrors.bio}
                 aria-describedby={fieldErrors.bio ? 'bio-error' : undefined}
-                disabled={submitMutation.isPending}
+                disabled={activeMutation.isPending}
               />
               {fieldErrors.bio ? (
                 <p id="bio-error" className="text-xs text-destructive animate-in fade-in-50">
@@ -454,31 +528,52 @@ export function MentorApplicationForm() {
                 placeholder="https://meet.google.com/abc-xyz-123"
                 error={fieldErrors.defaultMeetingLink}
                 helperText="Google Meet, Zoom, MS Teams... dùng cho các buổi trao đổi định hướng với học viên."
-                disabled={submitMutation.isPending}
+                disabled={activeMutation.isPending}
               />
             </div>
           </div>
 
           {/* Form Actions */}
           <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-3 pt-4 border-t border-border">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => router.push('/profile')}
-              disabled={submitMutation.isPending}
-              className="w-full sm:w-auto"
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Quay lại
-            </Button>
+            {mode === 'resubmit' && onCancel ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onCancel}
+                disabled={activeMutation.isPending}
+                className="w-full sm:w-auto"
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Hủy bỏ
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => router.push('/profile')}
+                disabled={activeMutation.isPending}
+                className="w-full sm:w-auto"
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Quay lại
+              </Button>
+            )}
             <Button
               type="submit"
-              isLoading={submitMutation.isPending}
-              disabled={submitMutation.isPending}
+              isLoading={activeMutation.isPending}
+              disabled={activeMutation.isPending}
               className="w-full sm:w-auto"
             >
-              <Send className="mr-2 h-4 w-4" />
-              {submitMutation.isPending ? 'Đang gửi hồ sơ...' : 'Gửi đơn ứng tuyển'}
+              {mode === 'resubmit' ? (
+                <RotateCcw className="mr-2 h-4 w-4" />
+              ) : (
+                <Send className="mr-2 h-4 w-4" />
+              )}
+              {activeMutation.isPending
+                ? 'Đang gửi hồ sơ...'
+                : mode === 'resubmit'
+                ? 'Nộp lại hồ sơ'
+                : 'Gửi đơn ứng tuyển'}
             </Button>
           </div>
         </form>

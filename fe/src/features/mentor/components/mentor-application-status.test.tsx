@@ -134,4 +134,75 @@ describe('MentorApplicationStatus Component', () => {
     fireEvent.click(refreshButton);
     expect(onRefreshMock).toHaveBeenCalledTimes(1);
   });
+
+  it('renders actionable "Nộp lại hồ sơ" button for eligible REJECTED application and calls onResubmit', () => {
+    const onResubmitMock = vi.fn();
+    const rejectedApp: CurrentMentorApplicationResponse = {
+      ...baseApplication,
+      applicationStatus: 'REJECTED',
+      mentorStatus: MentorStatus.REJECTED,
+    };
+
+    render(
+      <MentorApplicationStatus application={rejectedApp} onResubmit={onResubmitMock} />
+    );
+
+    const resubmitBtn = screen.getByRole('button', { name: /Nộp lại hồ sơ/i });
+    expect(resubmitBtn).toBeInTheDocument();
+
+    fireEvent.click(resubmitBtn);
+    expect(onResubmitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT render "Nộp lại hồ sơ" button when mentorStatus is SUSPENDED even if onResubmit is provided', () => {
+    const onResubmitMock = vi.fn();
+    const suspendedRejectedApp: CurrentMentorApplicationResponse = {
+      ...baseApplication,
+      applicationStatus: 'REJECTED',
+      mentorStatus: MentorStatus.SUSPENDED,
+    };
+
+    render(
+      <MentorApplicationStatus
+        application={suspendedRejectedApp}
+        onResubmit={onResubmitMock}
+      />
+    );
+
+    expect(
+      screen.getByText(/Tài khoản Mentor đang bị Tạm ngưng hoạt động \(SUSPENDED\)/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Nộp lại hồ sơ/i })).not.toBeInTheDocument();
+  });
+
+  it('does NOT render "Nộp lại hồ sơ" button for PENDING, APPROVED, or CANCELLED statuses even if onResubmit is provided', () => {
+    const onResubmitMock = vi.fn();
+
+    // 1. PENDING
+    const { rerender } = render(
+      <MentorApplicationStatus
+        application={{ ...baseApplication, applicationStatus: 'PENDING' }}
+        onResubmit={onResubmitMock}
+      />
+    );
+    expect(screen.queryByRole('button', { name: /Nộp lại hồ sơ/i })).not.toBeInTheDocument();
+
+    // 2. APPROVED
+    rerender(
+      <MentorApplicationStatus
+        application={{ ...baseApplication, applicationStatus: 'APPROVED' }}
+        onResubmit={onResubmitMock}
+      />
+    );
+    expect(screen.queryByRole('button', { name: /Nộp lại hồ sơ/i })).not.toBeInTheDocument();
+
+    // 3. CANCELLED
+    rerender(
+      <MentorApplicationStatus
+        application={{ ...baseApplication, applicationStatus: 'CANCELLED' }}
+        onResubmit={onResubmitMock}
+      />
+    );
+    expect(screen.queryByRole('button', { name: /Nộp lại hồ sơ/i })).not.toBeInTheDocument();
+  });
 });

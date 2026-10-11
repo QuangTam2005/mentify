@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useCurrentMentorApplication } from '../hooks/use-current-mentor-application';
 import { MentorApplicationForm } from './mentor-application-form';
 import { MentorApplicationStatus } from './mentor-application-status';
@@ -11,6 +11,7 @@ import { ApiError } from '@/core/errors/api-error';
 export function MentorApplyContainer() {
   const { data: application, isLoading, isError, error, refetch, isFetching } =
     useCurrentMentorApplication();
+  const [isResubmitting, setIsResubmitting] = useState(false);
 
   // 1. Loading state: Fetching current application status
   if (isLoading) {
@@ -84,11 +85,29 @@ export function MentorApplyContainer() {
 
   // 3. Success state: User has an existing application (HTTP 200)
   if (application) {
+    const isResubmitEligible =
+      application.applicationStatus === 'REJECTED' &&
+      application.mentorStatus !== 'SUSPENDED';
+
+    if (isResubmitting && isResubmitEligible) {
+      return (
+        <MentorApplicationForm
+          mode="resubmit"
+          initialData={application}
+          onCancel={() => setIsResubmitting(false)}
+          onSuccess={() => {
+            void refetch();
+          }}
+        />
+      );
+    }
+
     return (
       <MentorApplicationStatus
         application={application}
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
+        onResubmit={isResubmitEligible ? () => setIsResubmitting(true) : undefined}
       />
     );
   }
