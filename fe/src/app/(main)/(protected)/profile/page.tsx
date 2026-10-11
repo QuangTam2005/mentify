@@ -7,41 +7,14 @@ import { ConsentModal } from '@/features/user/components/consent-modal';
 import { Button } from '@/shared/components/ui/button';
 import { Badge } from '@/shared/components/ui/badge';
 import { USER_TYPE_LABELS, MENTOR_STATUS_LABELS } from '@/shared/types/domain-enums';
-import { ShieldCheck, AlertTriangle, LogIn } from 'lucide-react';
-import Link from 'next/link';
+import { ShieldCheck } from 'lucide-react';
 
 export default function ProfilePage() {
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { user } = useAuth();
   const [isConsentModalOpen, setIsConsentModalOpen] = useState(false);
 
-  if (isLoading) {
-    return (
-      <div className="mx-auto max-w-4xl px-4 py-16 text-center">
-        <p className="text-sm text-slate-500">Đang nạp thông tin tài khoản...</p>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated || !user) {
-    return (
-      <div className="mx-auto max-w-md px-4 py-20 text-center space-y-4">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400">
-          <AlertTriangle className="h-6 w-6" />
-        </div>
-        <h2 className="text-xl font-bold text-slate-900 dark:text-white">Yêu cầu Đăng nhập</h2>
-        <p className="text-sm text-slate-600 dark:text-slate-400">
-          Bạn cần đăng nhập để truy cập hồ sơ cá nhân và quản lý thông tin pháp lý.
-        </p>
-        <div className="pt-2">
-          <Link href="/login">
-            <Button className="w-full">
-              <LogIn className="mr-2 h-4 w-4" />
-              Đến trang Đăng nhập
-            </Button>
-          </Link>
-        </div>
-      </div>
-    );
+  if (!user) {
+    return null;
   }
 
   return (
