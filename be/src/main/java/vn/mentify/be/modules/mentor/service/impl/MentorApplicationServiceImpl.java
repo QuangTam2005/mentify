@@ -1,5 +1,8 @@
 package vn.mentify.be.modules.mentor.service.impl;
 
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.mentify.be.modules.mentor.entity.MentorApplicationEntity;
@@ -85,24 +88,7 @@ public class MentorApplicationServiceImpl implements MentorApplicationService {
         }
 
         // 4. Update profile fields from request and set status to PENDING
-        if (safeRequest.schoolId() != null) {
-            profile.setSchoolId(safeRequest.schoolId());
-        }
-        if (safeRequest.majorGroupCode() != null) {
-            profile.setMajorGroupCode(safeRequest.majorGroupCode().trim());
-        }
-        if (safeRequest.customMajorName() != null) {
-            profile.setCustomMajorName(safeRequest.customMajorName().trim());
-        }
-        if (safeRequest.bio() != null) {
-            profile.setBio(safeRequest.bio().trim());
-        }
-        if (safeRequest.expertiseAreas() != null) {
-            profile.setExpertiseAreas(safeRequest.expertiseAreas().trim());
-        }
-        if (safeRequest.defaultMeetingLink() != null) {
-            profile.setDefaultMeetingLink(safeRequest.defaultMeetingLink().trim());
-        }
+        applyRequestToProfile(profile, safeRequest);
 
         profile.setMentorStatus(MentorStatus.PENDING);
         profile.setAcceptingBookings(false);
@@ -139,6 +125,81 @@ public class MentorApplicationServiceImpl implements MentorApplicationService {
     }
 
     @Override
+    @Transactional
+    public MentorApplicationSubmissionResponse resubmitApplication(UUID userId, SubmitMentorApplicationRequest request) {
+        if (userId == null) {
+            throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "userId khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng");
+        }
+
+        MentorProfileEntity profile;
+        try {
+            profile = mentorProfileRepository.findByUserIdForUpdate(userId)
+                    .orElseThrow(() -> new ResourceNotFoundException("KhÃ´ng tÃ¬m tháº¥y há»“ sÆ¡ mentor"));
+        } catch (PessimisticLockingFailureException exception) {
+            throw new ConflictException("YÃªu cáº§u ná»™p láº¡i Ä‘Æ¡n mentor Ä‘ang Ä‘Æ°á»£c xá»­ lÃ½");
+        }
+
+        if (profile.getMentorStatus() == MentorStatus.SUSPENDED) {
+            throw new ApiException(ApiErrorCode.FORBIDDEN, "HÃ  sÆ¡ mentor Ä‘ang bá»‹ táº¡m Ä‘Ã¬nh chá»‰");
+        }
+
+        MentorApplicationEntity latestApplication = mentorApplicationRepository
+                .findFirstByMentorProfileIdOrderByAttemptNumberDesc(profile.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("KhÃ´ng tÃ¬m tháº¥y Ä‘Æ¡n á»©ng tuyá»ƒn mentor Ä‘á»ƒ ná»™p láº¡i"));
+        if (latestApplication.getStatus() != MentorApplicationStatus.REJECTED) {
+            throw new ConflictException("Chá»‰ cÃ³ thá»ƒ ná»™p láº¡i Ä‘Æ¡n mentor bá»‹ tá»« chá»‘i");
+        }
+
+        UserProfileResponse userProfile = userService.getProfile(userId);
+        UserType userType = userProfile.userType();
+        if (userType != UserType.UNIVERSITY_STUDENT && userType != UserType.WORKING_PROFESSIONAL) {
+            throw new ApiException(
+                    ApiErrorCode.FORBIDDEN,
+                    "Chá»‰ sinh viÃªn Ä‘áº¡i há»c/cao Ä‘áº³ng hoáº·c ngÆ°á»i Ä‘i lÃ m má»›i cÃ³ thá»ƒ Ä‘Äƒng kÃ½ lÃ m mentor");
+        }
+
+        SubmitMentorApplicationRequest safeRequest = request != null
+                ? request
+                : new SubmitMentorApplicationRequest(null, null, null, null, null, null);
+        applyRequestToProfile(profile, safeRequest);
+        profile.setMentorStatus(MentorStatus.PENDING);
+        profile.setAcceptingBookings(false);
+        mentorProfileRepository.save(profile);
+
+        Instant submittedAt = clock.instant();
+        MentorApplicationEntity nextApplication = new MentorApplicationEntity(
+                profile.getId(), userId, userType.name(), latestApplication.getAttemptNumber() + 1);
+        nextApplication.setStatus(MentorApplicationStatus.PENDING);
+        nextApplication.setSubmittedAt(submittedAt);
+        nextApplication.setSchoolId(profile.getSchoolId());
+        nextApplication.setMajorGroupCode(profile.getMajorGroupCode());
+        nextApplication.setCustomMajorName(profile.getCustomMajorName());
+        nextApplication.setBio(profile.getBio());
+
+        MentorApplicationEntity savedApplication;
+        try {
+            savedApplication = mentorApplicationRepository.saveAndFlush(nextApplication);
+        } catch (DataIntegrityViolationException exception) {
+            if (isAttemptNumberConflict(exception)) {
+                throw new ConflictException("ÄÆ¡n mentor Ä‘Ã£ Ä‘Æ°á»£c ná»™p láº¡i bá»Ÿi má»™t yÃªu cáº§u khÃ¡c");
+            }
+            throw exception;
+        }
+
+        return new MentorApplicationSubmissionResponse(
+                profile.getId(),
+                savedApplication.getId(),
+                userId,
+                profile.getMentorStatus(),
+                savedApplication.getStatus(),
+                savedApplication.getAttemptNumber(),
+                savedApplication.getAppliedUserType(),
+                profile.isAcceptingBookings(),
+                savedApplication.getSubmittedAt()
+        );
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public CurrentMentorApplicationResponse getCurrentApplication(UUID userId) {
         MentorApplicationEntity application = mentorApplicationRepository
@@ -161,5 +222,38 @@ public class MentorApplicationServiceImpl implements MentorApplicationService {
                 profile.isAcceptingBookings(),
                 application.getSubmittedAt()
         );
+    }
+
+    private void applyRequestToProfile(MentorProfileEntity profile, SubmitMentorApplicationRequest request) {
+        if (request.schoolId() != null) {
+            profile.setSchoolId(request.schoolId());
+        }
+        if (request.majorGroupCode() != null) {
+            profile.setMajorGroupCode(request.majorGroupCode().trim());
+        }
+        if (request.customMajorName() != null) {
+            profile.setCustomMajorName(request.customMajorName().trim());
+        }
+        if (request.bio() != null) {
+            profile.setBio(request.bio().trim());
+        }
+        if (request.expertiseAreas() != null) {
+            profile.setExpertiseAreas(request.expertiseAreas().trim());
+        }
+        if (request.defaultMeetingLink() != null) {
+            profile.setDefaultMeetingLink(request.defaultMeetingLink().trim());
+        }
+    }
+
+    private boolean isAttemptNumberConflict(Throwable exception) {
+        Throwable cause = exception;
+        while (cause != null) {
+            if (cause instanceof ConstraintViolationException constraintViolation
+                    && "uk_mentor_applications_attempt".equals(constraintViolation.getConstraintName())) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 }

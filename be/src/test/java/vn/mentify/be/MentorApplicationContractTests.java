@@ -1,6 +1,7 @@
 package vn.mentify.be;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,11 @@ import java.security.KeyPairGenerator;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
@@ -464,5 +470,340 @@ class MentorApplicationContractTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.mentorApplicationId").value(applicationB.getId().toString()))
                 .andExpect(jsonPath("$.data.bio").value("User B private application"));
+    }
+
+    @Test
+    @DisplayName("Rejected application can be resubmitted as a new pending attempt")
+    void resubmitRejectedApplication_createsNewAttemptAndPreservesHistory() throws Exception {
+        UserEntity user = TestFixtures.saveUser(
+                userRepository, "resubmit-success@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        MentorProfileEntity profile = new MentorProfileEntity(user.getId());
+        profile.setMentorStatus(MentorStatus.REJECTED);
+        profile.setAcceptingBookings(false);
+        profile = mentorProfileRepository.saveAndFlush(profile);
+
+        MentorApplicationEntity firstAttempt = new MentorApplicationEntity(
+                profile.getId(), user.getId(), UserType.UNIVERSITY_STUDENT.name(), 1);
+        firstAttempt.setStatus(MentorApplicationStatus.REJECTED);
+        firstAttempt.setSchoolId(schoolRepository.findAll().stream().findFirst().orElseThrow().getId());
+        firstAttempt.setBio("Rejected bio");
+        firstAttempt.setRejectionReason("Previous review decision");
+        mentorApplicationRepository.saveAndFlush(firstAttempt);
+
+        SubmitMentorApplicationRequest requestDto = new SubmitMentorApplicationRequest(
+                null, null, "Computer Science", "Updated bio", "Java, Spring", "https://meet.example/new");
+        MvcResult result = mockMvc.perform(post("/api/v1/mentor/applications/resubmit")
+                        .with(SecurityMockMvcRequestPostProcessors.user(user.getEmail()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestDto)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.mentorProfileId").value(profile.getId().toString()))
+                .andExpect(jsonPath("$.data.userId").value(user.getId().toString()))
+                .andExpect(jsonPath("$.data.attemptNumber").value(2))
+                .andExpect(jsonPath("$.data.mentorStatus").value("PENDING"))
+                .andExpect(jsonPath("$.data.applicationStatus").value("PENDING"))
+                .andExpect(jsonPath("$.data.acceptingBookings").value(false))
+                .andExpect(jsonPath("$.data.submittedAt").isNotEmpty())
+                .andReturn();
+
+        String newApplicationId = objectMapper.readTree(result.getResponse().getContentAsString())
+                .path("data").path("mentorApplicationId").asText();
+        assertThat(newApplicationId).isNotBlank().isNotEqualTo(firstAttempt.getId().toString());
+
+        List<MentorApplicationEntity> attempts = mentorApplicationRepository
+                .findByMentorProfileIdOrderByAttemptNumberDesc(profile.getId());
+        assertThat(attempts).hasSize(2);
+        assertThat(attempts.get(0).getAttemptNumber()).isEqualTo(2);
+        assertThat(attempts.get(0).getStatus()).isEqualTo(MentorApplicationStatus.PENDING);
+        assertThat(attempts.get(0).getCustomMajorName()).isEqualTo("Computer Science");
+        assertThat(attempts.get(0).getBio()).isEqualTo("Updated bio");
+        assertThat(attempts.get(0).getId().toString()).isEqualTo(newApplicationId);
+        assertThat(attempts.get(0).getRejectionReason()).isNull();
+        assertThat(attempts.get(1).getId()).isEqualTo(firstAttempt.getId());
+        assertThat(attempts.get(1).getStatus()).isEqualTo(MentorApplicationStatus.REJECTED);
+        assertThat(attempts.get(1).getRejectionReason()).isEqualTo("Previous review decision");
+
+        MentorProfileEntity updatedProfile = mentorProfileRepository.findByUserId(user.getId()).orElseThrow();
+        assertThat(updatedProfile.getMentorStatus()).isEqualTo(MentorStatus.PENDING);
+        assertThat(updatedProfile.isAcceptingBookings()).isFalse();
+        assertThat(updatedProfile.getBio()).isEqualTo("Updated bio");
+        assertThat(updatedProfile.getExpertiseAreas()).isEqualTo("Java, Spring");
+        assertThat(updatedProfile.getDefaultMeetingLink()).isEqualTo("https://meet.example/new");
+
+        mockMvc.perform(get("/api/v1/mentor/applications/me")
+                        .with(SecurityMockMvcRequestPostProcessors.user(user.getEmail())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.mentorApplicationId").value(newApplicationId))
+                .andExpect(jsonPath("$.data.attemptNumber").value(2))
+                .andExpect(jsonPath("$.data.applicationStatus").value("PENDING"))
+                .andExpect(jsonPath("$.data.bio").value("Updated bio"))
+                .andExpect(jsonPath("$.data.rejectionReason").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("Resubmission is allowed only for the latest rejected attempt")
+    void resubmitApplication_rejectsPendingApprovedAndCancelledLatestAttempts() throws Exception {
+        UserEntity user = TestFixtures.saveUser(
+                userRepository, "resubmit-statuses@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        MentorProfileEntity profile = mentorProfileRepository.saveAndFlush(new MentorProfileEntity(user.getId()));
+
+        MentorApplicationEntity olderRejected = new MentorApplicationEntity(
+                profile.getId(), user.getId(), UserType.UNIVERSITY_STUDENT.name(), 1);
+        olderRejected.setStatus(MentorApplicationStatus.REJECTED);
+        mentorApplicationRepository.saveAndFlush(olderRejected);
+
+        MentorApplicationEntity latest = new MentorApplicationEntity(
+                profile.getId(), user.getId(), UserType.UNIVERSITY_STUDENT.name(), 2);
+        mentorApplicationRepository.saveAndFlush(latest);
+
+        for (MentorApplicationStatus latestStatus : List.of(
+                MentorApplicationStatus.PENDING,
+                MentorApplicationStatus.APPROVED,
+                MentorApplicationStatus.CANCELLED)) {
+            latest.setStatus(latestStatus);
+            mentorApplicationRepository.saveAndFlush(latest);
+
+            mockMvc.perform(post("/api/v1/mentor/applications/resubmit")
+                            .with(SecurityMockMvcRequestPostProcessors.user(user.getEmail()))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(
+                                    new SubmitMentorApplicationRequest(null, null, null, "Bio", "Expertise", null))))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.error.code").value("CONFLICT"));
+        }
+
+        assertThat(mentorApplicationRepository.findByMentorProfileIdOrderByAttemptNumberDesc(profile.getId()))
+                .hasSize(2);
+        assertThat(olderRejected.getStatus()).isEqualTo(MentorApplicationStatus.REJECTED);
+    }
+
+    @Test
+    @DisplayName("Resubmission without an application returns 404")
+    void resubmitApplication_withoutPreviousAttempt_returns404() throws Exception {
+        UserEntity user = TestFixtures.saveUser(
+                userRepository, "resubmit-no-attempt@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        mentorProfileRepository.saveAndFlush(new MentorProfileEntity(user.getId()));
+
+        mockMvc.perform(post("/api/v1/mentor/applications/resubmit")
+                        .with(SecurityMockMvcRequestPostProcessors.user(user.getEmail()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new SubmitMentorApplicationRequest(null, null, null, "Bio", "Expertise", null))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("Suspended mentor profile cannot be resubmitted")
+    void resubmitApplication_suspendedProfile_returns403() throws Exception {
+        UserEntity user = TestFixtures.saveUser(
+                userRepository, "resubmit-suspended@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        MentorProfileEntity profile = new MentorProfileEntity(user.getId());
+        profile.setMentorStatus(MentorStatus.SUSPENDED);
+        profile = mentorProfileRepository.saveAndFlush(profile);
+        MentorApplicationEntity rejected = new MentorApplicationEntity(
+                profile.getId(), user.getId(), UserType.UNIVERSITY_STUDENT.name(), 1);
+        rejected.setStatus(MentorApplicationStatus.REJECTED);
+        mentorApplicationRepository.saveAndFlush(rejected);
+
+        mockMvc.perform(post("/api/v1/mentor/applications/resubmit")
+                        .with(SecurityMockMvcRequestPostProcessors.user(user.getEmail()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new SubmitMentorApplicationRequest(null, null, null, "Bio", "Expertise", null))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+
+        assertThat(mentorApplicationRepository.findByMentorProfileIdOrderByAttemptNumberDesc(profile.getId()))
+                .hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Anonymous resubmission returns 401")
+    void resubmitApplication_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(post("/api/v1/mentor/applications/resubmit")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new SubmitMentorApplicationRequest(null, null, null, "Bio", "Expertise", null))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+    }
+
+    @Test
+    @DisplayName("Resubmission request validation is enforced")
+    void resubmitApplication_oversizedBio_returns400() throws Exception {
+        UserEntity user = TestFixtures.saveUser(
+                userRepository, "resubmit-invalid@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        MentorProfileEntity profile = new MentorProfileEntity(user.getId());
+        profile.setMentorStatus(MentorStatus.REJECTED);
+        profile = mentorProfileRepository.saveAndFlush(profile);
+        MentorApplicationEntity rejected = new MentorApplicationEntity(
+                profile.getId(), user.getId(), UserType.UNIVERSITY_STUDENT.name(), 1);
+        rejected.setStatus(MentorApplicationStatus.REJECTED);
+        mentorApplicationRepository.saveAndFlush(rejected);
+
+        mockMvc.perform(post("/api/v1/mentor/applications/resubmit")
+                        .with(SecurityMockMvcRequestPostProcessors.user(user.getEmail()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new SubmitMentorApplicationRequest(
+                                null, null, null, "x".repeat(1001), null, null))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+
+        assertThat(mentorApplicationRepository.findByMentorProfileIdOrderByAttemptNumberDesc(profile.getId()))
+                .hasSize(1);
+        assertThat(mentorProfileRepository.findByUserId(user.getId()).orElseThrow().getMentorStatus())
+                .isEqualTo(MentorStatus.REJECTED);
+    }
+
+    @Test
+    @DisplayName("Ineligible account type cannot resubmit a rejected application")
+    void resubmitApplication_ineligibleUserType_returns403() throws Exception {
+        UserEntity user = TestFixtures.saveUser(
+                userRepository, "resubmit-school-student@mentify.vn", UserType.SCHOOL_STUDENT, UserRole.USER);
+        MentorProfileEntity profile = new MentorProfileEntity(user.getId());
+        profile.setMentorStatus(MentorStatus.REJECTED);
+        profile = mentorProfileRepository.saveAndFlush(profile);
+        MentorApplicationEntity rejected = new MentorApplicationEntity(
+                profile.getId(), user.getId(), UserType.UNIVERSITY_STUDENT.name(), 1);
+        rejected.setStatus(MentorApplicationStatus.REJECTED);
+        mentorApplicationRepository.saveAndFlush(rejected);
+
+        mockMvc.perform(post("/api/v1/mentor/applications/resubmit")
+                        .with(SecurityMockMvcRequestPostProcessors.user(user.getEmail()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new SubmitMentorApplicationRequest(null, null, null, "Bio", "Expertise", null))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+
+        assertThat(mentorApplicationRepository.findByMentorProfileIdOrderByAttemptNumberDesc(profile.getId()))
+                .hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Resubmission ownership comes from the authenticated principal")
+    void resubmitApplication_cannotSelectAnotherUsersApplication() throws Exception {
+        UserEntity applicant = TestFixtures.saveUser(
+                userRepository, "resubmit-owner@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        UserEntity otherUser = TestFixtures.saveUser(
+                userRepository, "resubmit-other@mentify.vn", UserType.WORKING_PROFESSIONAL, UserRole.USER);
+        MentorProfileEntity applicantProfile = new MentorProfileEntity(applicant.getId());
+        applicantProfile.setMentorStatus(MentorStatus.REJECTED);
+        applicantProfile = mentorProfileRepository.saveAndFlush(applicantProfile);
+        MentorProfileEntity otherProfile = new MentorProfileEntity(otherUser.getId());
+        otherProfile.setMentorStatus(MentorStatus.REJECTED);
+        otherProfile = mentorProfileRepository.saveAndFlush(otherProfile);
+
+        MentorApplicationEntity applicantAttempt = new MentorApplicationEntity(
+                applicantProfile.getId(), applicant.getId(), UserType.UNIVERSITY_STUDENT.name(), 1);
+        applicantAttempt.setStatus(MentorApplicationStatus.REJECTED);
+        mentorApplicationRepository.saveAndFlush(applicantAttempt);
+        MentorApplicationEntity otherAttempt = new MentorApplicationEntity(
+                otherProfile.getId(), otherUser.getId(), UserType.WORKING_PROFESSIONAL.name(), 1);
+        otherAttempt.setStatus(MentorApplicationStatus.REJECTED);
+        mentorApplicationRepository.saveAndFlush(otherAttempt);
+
+        ObjectNode requestBody = objectMapper.valueToTree(new SubmitMentorApplicationRequest(
+                null, null, null, "Applicant update", "Java", null));
+        requestBody.put("userId", otherUser.getId().toString());
+        requestBody.put("mentorProfileId", otherProfile.getId().toString());
+        requestBody.put("mentorApplicationId", otherAttempt.getId().toString());
+        requestBody.put("attemptNumber", 99);
+        requestBody.put("mentorStatus", "APPROVED");
+        requestBody.put("applicationStatus", "APPROVED");
+        requestBody.put("reviewedAt", "2026-01-01T00:00:00Z");
+        requestBody.put("rejectionReason", "client supplied review data");
+        MvcResult response = mockMvc.perform(post("/api/v1/mentor/applications/resubmit")
+                        .with(SecurityMockMvcRequestPostProcessors.user(applicant.getEmail()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestBody)))
+                .andReturn();
+        int responseStatus = response.getResponse().getStatus();
+        assertThat(responseStatus).isIn(201, 400);
+        if (responseStatus == 201) {
+            var responseData = objectMapper.readTree(response.getResponse().getContentAsString()).path("data");
+            assertThat(responseData.path("userId").asText()).isEqualTo(applicant.getId().toString());
+            assertThat(responseData.path("mentorProfileId").asText()).isEqualTo(applicantProfile.getId().toString());
+            assertThat(responseData.path("attemptNumber").asInt()).isEqualTo(2);
+            assertThat(responseData.path("mentorStatus").asText()).isEqualTo("PENDING");
+            assertThat(responseData.path("applicationStatus").asText()).isEqualTo("PENDING");
+        } else {
+            assertThat(objectMapper.readTree(response.getResponse().getContentAsString())
+                    .path("error").path("code").asText()).isEqualTo("VALIDATION_ERROR");
+            assertThat(mentorApplicationRepository.findByMentorProfileIdOrderByAttemptNumberDesc(applicantProfile.getId()))
+                    .hasSize(1);
+        }
+
+        assertThat(mentorApplicationRepository.findByMentorProfileIdOrderByAttemptNumberDesc(otherProfile.getId()))
+                .hasSize(1)
+                .first()
+                .extracting(MentorApplicationEntity::getId)
+                .isEqualTo(otherAttempt.getId());
+    }
+
+    @Test
+    @DisplayName("Concurrent resubmissions create exactly one next attempt")
+    void resubmitApplication_concurrentRequests_createOneAttempt() throws Exception {
+        UserEntity user = TestFixtures.saveUser(
+                userRepository, "resubmit-race@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        MentorProfileEntity profile = new MentorProfileEntity(user.getId());
+        profile.setMentorStatus(MentorStatus.REJECTED);
+        profile = mentorProfileRepository.saveAndFlush(profile);
+        MentorApplicationEntity rejected = new MentorApplicationEntity(
+                profile.getId(), user.getId(), UserType.UNIVERSITY_STUDENT.name(), 1);
+        rejected.setStatus(MentorApplicationStatus.REJECTED);
+        mentorApplicationRepository.saveAndFlush(rejected);
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        SubmitMentorApplicationRequest requestDto = new SubmitMentorApplicationRequest(
+                null, null, null, "Concurrent update", "Java", null);
+        try {
+            Future<Integer> first = submitConcurrentResubmission(executor, ready, start, user, requestDto);
+            Future<Integer> second = submitConcurrentResubmission(executor, ready, start, user, requestDto);
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            List<Integer> statuses = List.of(
+                    first.get(30, TimeUnit.SECONDS),
+                    second.get(30, TimeUnit.SECONDS));
+            assertThat(statuses).containsExactlyInAnyOrder(201, 409);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+
+        List<MentorApplicationEntity> attempts = mentorApplicationRepository
+                .findByMentorProfileIdOrderByAttemptNumberDesc(profile.getId());
+        assertThat(attempts).hasSize(2);
+        assertThat(attempts.get(0).getAttemptNumber()).isEqualTo(2);
+        assertThat(attempts.get(0).getStatus()).isEqualTo(MentorApplicationStatus.PENDING);
+        assertThat(attempts.get(1).getId()).isEqualTo(rejected.getId());
+        assertThat(attempts.get(1).getStatus()).isEqualTo(MentorApplicationStatus.REJECTED);
+    }
+
+    private Future<Integer> submitConcurrentResubmission(
+            ExecutorService executor,
+            CountDownLatch ready,
+            CountDownLatch start,
+            UserEntity user,
+            SubmitMentorApplicationRequest requestDto) {
+        return executor.submit(() -> {
+            ready.countDown();
+            if (!start.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Concurrent resubmission test start timed out");
+            }
+            return mockMvc.perform(post("/api/v1/mentor/applications/resubmit")
+                            .with(SecurityMockMvcRequestPostProcessors.user(user.getEmail()))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(requestDto)))
+                    .andReturn()
+                    .getResponse()
+                    .getStatus();
+        });
     }
 }

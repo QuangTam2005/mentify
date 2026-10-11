@@ -46,6 +46,17 @@ public class MentorApplicationController {
         return responseFactory.success(response, request);
     }
 
+    @PostMapping("/applications/resubmit")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiSuccessResponse<MentorApplicationSubmissionResponse> resubmitApplication(
+            @Valid @RequestBody SubmitMentorApplicationRequest requestDto,
+            HttpServletRequest request) {
+        UserEntity currentUser = currentUserResolver.resolveCurrentUser();
+        MentorApplicationSubmissionResponse response =
+                mentorApplicationService.resubmitApplication(currentUser.getId(), requestDto);
+        return responseFactory.success(response, request);
+    }
+
     @GetMapping("/applications/me")
     public ApiSuccessResponse<CurrentMentorApplicationResponse> getCurrentApplication(HttpServletRequest request) {
         UserEntity currentUser = currentUserResolver.resolveCurrentUser();

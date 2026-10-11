@@ -10,5 +10,7 @@ public interface MentorApplicationService {
 
     MentorApplicationSubmissionResponse submitInitialApplication(UUID userId, SubmitMentorApplicationRequest request);
 
+    MentorApplicationSubmissionResponse resubmitApplication(UUID userId, SubmitMentorApplicationRequest request);
+
     CurrentMentorApplicationResponse getCurrentApplication(UUID userId);
 }
