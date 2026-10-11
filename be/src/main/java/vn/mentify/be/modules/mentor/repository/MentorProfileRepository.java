@@ -20,6 +20,10 @@ public interface MentorProfileRepository extends JpaRepository<MentorProfileEnti
     @Query("select profile from MentorProfileEntity profile where profile.userId = :userId")
     Optional<MentorProfileEntity> findByUserIdForUpdate(@Param("userId") UUID userId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select profile from MentorProfileEntity profile where profile.id = :profileId")
+    Optional<MentorProfileEntity> findByIdForUpdate(@Param("profileId") UUID profileId);
+
     boolean existsByUserId(UUID userId);
 
     List<MentorProfileEntity> findByMentorStatus(MentorStatus mentorStatus);

@@ -786,6 +786,236 @@ class MentorApplicationContractTests {
         assertThat(attempts.get(1).getStatus()).isEqualTo(MentorApplicationStatus.REJECTED);
     }
 
+    @Test
+    @DisplayName("Admin pending queue is paginated and contains latest pending attempts only")
+    void adminPendingQueue_returnsLatestPendingOnly() throws Exception {
+        UserEntity admin = TestFixtures.saveUser(
+                userRepository, "review-admin@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.ADMIN);
+        UserEntity oldPendingUser = TestFixtures.saveUser(
+                userRepository, "old-pending@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        MentorProfileEntity oldPendingProfile = pendingProfile(oldPendingUser);
+        MentorApplicationEntity oldPending = application(oldPendingProfile, oldPendingUser, 1,
+                MentorApplicationStatus.PENDING);
+        MentorApplicationEntity laterRejected = application(oldPendingProfile, oldPendingUser, 2,
+                MentorApplicationStatus.REJECTED);
+
+        UserEntity currentPendingUser = TestFixtures.saveUser(
+                userRepository, "current-pending@mentify.vn", UserType.WORKING_PROFESSIONAL, UserRole.USER);
+        MentorProfileEntity currentPendingProfile = pendingProfile(currentPendingUser);
+        MentorApplicationEntity currentPending = application(currentPendingProfile, currentPendingUser, 2,
+                MentorApplicationStatus.PENDING);
+        application(currentPendingProfile, currentPendingUser, 1, MentorApplicationStatus.REJECTED);
+        UserEntity secondPendingUser = TestFixtures.saveUser(
+                userRepository, "second-pending@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        MentorProfileEntity secondPendingProfile = pendingProfile(secondPendingUser);
+        MentorApplicationEntity secondPending = application(secondPendingProfile, secondPendingUser, 1,
+                MentorApplicationStatus.PENDING);
+
+        mockMvc.perform(get("/api/v1/admin/mentor/applications")
+                        .param("page", "0").param("size", "1")
+                        .with(SecurityMockMvcRequestPostProcessors.user(admin.getEmail()).roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.meta.page").value(0))
+                .andExpect(jsonPath("$.meta.size").value(1))
+                .andExpect(jsonPath("$.meta.totalItems").value(2))
+                .andExpect(jsonPath("$.data[0].applicationId").value(currentPending.getId().toString()))
+                .andExpect(jsonPath("$.data[0].applicationStatus").value("PENDING"))
+                .andExpect(jsonPath("$.data[0].passwordHash").doesNotExist());
+        MvcResult pageTwo = mockMvc.perform(get("/api/v1/admin/mentor/applications")
+                        .param("page", "1").param("size", "1")
+                        .with(SecurityMockMvcRequestPostProcessors.user(admin.getEmail()).roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andReturn();
+        assertThat(objectMapper.readTree(pageTwo.getResponse().getContentAsString())
+                .path("data").get(0).path("applicationId").asText())
+                .isEqualTo(secondPending.getId().toString());
+        assertThat(oldPending.getId()).isNotEqualTo(laterRejected.getId());
+    }
+
+    @Test
+    @DisplayName("Admin can approve and reject latest pending applications with synchronized profile state")
+    void adminReview_approvesAndRejects() throws Exception {
+        UserEntity admin = TestFixtures.saveUser(
+                userRepository, "review-admin-actions@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.ADMIN);
+        UserEntity approveUser = TestFixtures.saveUser(
+                userRepository, "review-approve@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        MentorProfileEntity approvedProfile = pendingProfile(approveUser);
+        MentorApplicationEntity toApprove = application(approvedProfile, approveUser, 1,
+                MentorApplicationStatus.PENDING);
+        approvedProfile.setAcceptingBookings(true);
+        mentorProfileRepository.saveAndFlush(approvedProfile);
+
+        UserEntity rejectUser = TestFixtures.saveUser(
+                userRepository, "review-reject@mentify.vn", UserType.WORKING_PROFESSIONAL, UserRole.USER);
+        MentorProfileEntity rejectedProfile = pendingProfile(rejectUser);
+        MentorApplicationEntity toReject = application(rejectedProfile, rejectUser, 1,
+                MentorApplicationStatus.PENDING);
+        var adminPrincipal = SecurityMockMvcRequestPostProcessors.user(admin.getEmail()).roles("ADMIN");
+
+        mockMvc.perform(get("/api/v1/admin/mentor/applications/{id}", toApprove.getId()).with(adminPrincipal))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.applicationId").value(toApprove.getId().toString()))
+                .andExpect(jsonPath("$.data.applicationStatus").value("PENDING"));
+        mockMvc.perform(get("/api/v1/admin/mentor/applications/{id}", UUID.randomUUID()).with(adminPrincipal))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(post("/api/v1/admin/mentor/applications/{id}/approve", toApprove.getId())
+                        .with(adminPrincipal))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.applicationStatus").value("APPROVED"))
+                .andExpect(jsonPath("$.data.mentorStatus").value("APPROVED"))
+                .andExpect(jsonPath("$.data.acceptingBookings").value(false));
+        assertThat(mentorApplicationRepository.findById(toApprove.getId()).orElseThrow().getReviewedAt()).isNotNull();
+        assertThat(mentorProfileRepository.findById(approvedProfile.getId()).orElseThrow().isAcceptingBookings()).isFalse();
+        mockMvc.perform(post("/api/v1/admin/mentor/applications/{id}/approve", toApprove.getId())
+                        .with(adminPrincipal))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(post("/api/v1/admin/mentor/applications/{id}/reject", toReject.getId())
+                        .with(adminPrincipal)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rejectionReason\":\"Please add more mentoring experience.\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.applicationStatus").value("REJECTED"))
+                .andExpect(jsonPath("$.data.mentorStatus").value("REJECTED"))
+                .andExpect(jsonPath("$.data.rejectionReason").value("Please add more mentoring experience."));
+        assertThat(mentorProfileRepository.findById(rejectedProfile.getId()).orElseThrow().isAcceptingBookings()).isFalse();
+        mockMvc.perform(post("/api/v1/admin/mentor/applications/{id}/reject", UUID.randomUUID())
+                        .with(adminPrincipal)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rejectionReason\":\" \"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("Admin review routes reject anonymous and USER principals")
+    void adminReviewRoutes_requireAdmin() throws Exception {
+        UserEntity applicant = TestFixtures.saveUser(
+                userRepository, "review-protected@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        UserEntity normalUser = TestFixtures.saveUser(
+                userRepository, "review-normal-user@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        MentorProfileEntity profile = pendingProfile(applicant);
+        MentorApplicationEntity application = application(profile, applicant, 1, MentorApplicationStatus.PENDING);
+        String id = application.getId().toString();
+        for (String path : List.of(
+                "/api/v1/admin/mentor/applications",
+                "/api/v1/admin/mentor/applications/" + id,
+                "/api/v1/admin/mentor/applications/" + id + "/approve",
+                "/api/v1/admin/mentor/applications/" + id + "/reject")) {
+            var anonymous = path.endsWith("/approve") || path.endsWith("/reject")
+                    ? mockMvc.perform(post(path).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"rejectionReason\":\"reason\"}"))
+                    : mockMvc.perform(get(path));
+            anonymous.andExpect(status().isUnauthorized());
+            var asUser = path.endsWith("/approve") || path.endsWith("/reject")
+                    ? mockMvc.perform(post(path).with(SecurityMockMvcRequestPostProcessors.user(normalUser.getEmail()).roles("USER"))
+                    .contentType(MediaType.APPLICATION_JSON).content("{\"rejectionReason\":\"reason\"}"))
+                    : mockMvc.perform(get(path).with(SecurityMockMvcRequestPostProcessors.user(normalUser.getEmail()).roles("USER")));
+            asUser.andExpect(status().isForbidden());
+        }
+    }
+
+    @Test
+    @DisplayName("Concurrent admin decisions produce one decision and one conflict")
+    void adminReview_concurrentApproveAndReject_onlyOneWins() throws Exception {
+        UserEntity firstAdmin = TestFixtures.saveUser(
+                userRepository, "review-race-a@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.ADMIN);
+        UserEntity secondAdmin = TestFixtures.saveUser(
+                userRepository, "review-race-b@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.ADMIN);
+        UserEntity applicant = TestFixtures.saveUser(
+                userRepository, "review-race-applicant@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        MentorProfileEntity profile = pendingProfile(applicant);
+        MentorApplicationEntity application = application(profile, applicant, 1, MentorApplicationStatus.PENDING);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<Integer> approve = concurrentReview(executor, ready, start, firstAdmin, application.getId(), true);
+            Future<Integer> reject = concurrentReview(executor, ready, start, secondAdmin, application.getId(), false);
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            assertThat(List.of(approve.get(30, TimeUnit.SECONDS), reject.get(30, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(200, 409);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+        MentorApplicationEntity reviewed = mentorApplicationRepository.findById(application.getId()).orElseThrow();
+        MentorProfileEntity reviewedProfile = mentorProfileRepository.findById(profile.getId()).orElseThrow();
+        assertThat(reviewed.getStatus()).isIn(MentorApplicationStatus.APPROVED, MentorApplicationStatus.REJECTED);
+        assertThat(reviewed.getReviewedAt()).isNotNull();
+        assertThat(reviewedProfile.getMentorStatus().name()).isEqualTo(reviewed.getStatus().name());
+        assertThat(reviewedProfile.isAcceptingBookings()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Historical attempts and suspended profiles cannot be approved")
+    void adminReview_rejectsHistoricalAndSuspendedApplications() throws Exception {
+        UserEntity admin = TestFixtures.saveUser(
+                userRepository, "review-guard-admin@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.ADMIN);
+        UserEntity historicalUser = TestFixtures.saveUser(
+                userRepository, "review-historical@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        MentorProfileEntity historicalProfile = pendingProfile(historicalUser);
+        MentorApplicationEntity historical = application(historicalProfile, historicalUser, 1, MentorApplicationStatus.PENDING);
+        application(historicalProfile, historicalUser, 2, MentorApplicationStatus.PENDING);
+        UserEntity suspendedUser = TestFixtures.saveUser(
+                userRepository, "review-suspended@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        MentorProfileEntity suspendedProfile = pendingProfile(suspendedUser);
+        suspendedProfile.setMentorStatus(MentorStatus.SUSPENDED);
+        mentorProfileRepository.saveAndFlush(suspendedProfile);
+        MentorApplicationEntity suspended = application(suspendedProfile, suspendedUser, 1,
+                MentorApplicationStatus.PENDING);
+        var adminPrincipal = SecurityMockMvcRequestPostProcessors.user(admin.getEmail()).roles("ADMIN");
+        mockMvc.perform(post("/api/v1/admin/mentor/applications/{id}/approve", historical.getId())
+                        .with(adminPrincipal))
+                .andExpect(status().isConflict());
+        mockMvc.perform(post("/api/v1/admin/mentor/applications/{id}/approve", suspended.getId())
+                        .with(adminPrincipal))
+                .andExpect(status().isForbidden());
+    }
+
+    private MentorProfileEntity pendingProfile(UserEntity user) {
+        MentorProfileEntity profile = new MentorProfileEntity(user.getId());
+        profile.setMentorStatus(MentorStatus.PENDING);
+        return mentorProfileRepository.saveAndFlush(profile);
+    }
+
+    private MentorApplicationEntity application(
+            MentorProfileEntity profile,
+            UserEntity user,
+            int attemptNumber,
+            MentorApplicationStatus status) {
+        MentorApplicationEntity application = new MentorApplicationEntity(
+                profile.getId(), user.getId(), user.getUserType().name(), attemptNumber);
+        application.setStatus(status);
+        return mentorApplicationRepository.saveAndFlush(application);
+    }
+
+    private Future<Integer> concurrentReview(
+            ExecutorService executor,
+            CountDownLatch ready,
+            CountDownLatch start,
+            UserEntity admin,
+            UUID applicationId,
+            boolean approve) {
+        return executor.submit(() -> {
+            ready.countDown();
+            if (!start.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Concurrent review test start timed out");
+            }
+            var builder = approve
+                    ? post("/api/v1/admin/mentor/applications/{id}/approve", applicationId)
+                    : post("/api/v1/admin/mentor/applications/{id}/reject", applicationId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"rejectionReason\":\"Not enough detail\"}");
+            return mockMvc.perform(builder.with(SecurityMockMvcRequestPostProcessors.user(admin.getEmail()).roles("ADMIN")))
+                    .andReturn().getResponse().getStatus();
+        });
+    }
+
     private Future<Integer> submitConcurrentResubmission(
             ExecutorService executor,
             CountDownLatch ready,

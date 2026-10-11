@@ -106,3 +106,56 @@ The success response uses `MentorApplicationSubmissionResponse`:
 - `409 CONFLICT`: the latest attempt is not `REJECTED`, or another resubmission has already won a concurrent request.
 
 Do not automatically retry this POST after a timeout or `409`. First call `GET /api/v1/mentor/applications/me` to check whether the new attempt was created. Concurrent requests are serialized by the backend; at most one can create the next attempt.
+
+## Admin application review
+
+All routes in this section require a valid access token with the server-side `ADMIN` role. The API enforces this with Spring Security; hiding controls in the UI is not an authorization check.
+
+### List pending applications
+
+- **Method:** `GET`
+- **Path:** `/api/v1/admin/mentor/applications`
+- **Query:** `page` (zero-based, default `0`), `size` (default `20`, range `1`–`100`).
+- **Success:** `200 OK`, `ApiSuccessResponse<MentorApplicationAdminListItem[]>`.
+
+The response `meta` contains `page`, `size`, `totalItems`, and `totalPages`. Queue entries are ordered by submission time and ID. Only the latest attempt for each Mentor Profile is included, and only when that attempt is `PENDING`.
+
+Each list item contains `applicationId`, `mentorProfileId`, `userId`, applicant `email` and `applicantName` (nullable), `applicationStatus`, `attemptNumber`, `appliedUserType`, and `submittedAt`.
+
+### Review details
+
+- **Method:** `GET`
+- **Path:** `/api/v1/admin/mentor/applications/{applicationId}`
+- **Success:** `200 OK`, `ApiSuccessResponse<MentorApplicationAdminDetail>`.
+
+The detail DTO includes application/profile/user IDs, applicant email and optional name, applied user type, the application snapshot (`schoolId`, `majorGroupCode`, `customMajorName`, `bio`), current profile `expertiseAreas` and `defaultMeetingLink`, attempt/status fields, booking availability, submission/review timestamps, and the stored rejection reason. Passwords, tokens, and authentication attributes are excluded. Historical applications can be read for context, but cannot be reviewed.
+
+### Approve
+
+- **Method:** `POST`
+- **Path:** `/api/v1/admin/mentor/applications/{applicationId}/approve`
+- **Body:** none.
+- **Success:** `200 OK`, `ApiSuccessResponse<MentorApplicationAdminDecision>`.
+
+Only the latest `PENDING` attempt on a non-suspended, eligible Mentor Profile can be approved. The application and profile become `APPROVED`; `acceptingBookings` remains `false`. The server sets `reviewedAt`.
+
+### Reject
+
+- **Method:** `POST`
+- **Path:** `/api/v1/admin/mentor/applications/{applicationId}/reject`
+- **Body:** `{"rejectionReason":"Please add more detail about your mentoring experience."}`. The reason is required, non-blank after trimming, and limited to 500 characters.
+- **Success:** `200 OK`, `ApiSuccessResponse<MentorApplicationAdminDecision>`.
+
+Only the latest `PENDING` attempt on a non-suspended, eligible Mentor Profile can be rejected. The application and profile become `REJECTED`; prior attempts remain unchanged. The server sets `reviewedAt` and stores the reason in the existing `rejectionReason` field.
+
+The decision DTO contains `applicationId`, `mentorProfileId`, `userId`, `applicationStatus`, `mentorStatus`, `attemptNumber`, `acceptingBookings`, `reviewedAt`, and `rejectionReason`.
+
+### Admin review errors and transitions
+
+- `400 VALIDATION_ERROR`: invalid page/size, malformed UUID, or missing/invalid rejection reason.
+- `401 UNAUTHENTICATED`: missing or invalid access token.
+- `403 FORBIDDEN`: authenticated non-admin, suspended profile, or applicant no longer eligible.
+- `404 RESOURCE_NOT_FOUND`: application or related record does not exist.
+- `409 CONFLICT`: application is no longer the latest `PENDING` attempt, or another review decision already won.
+
+Only `PENDING` can transition to `APPROVED` or `REJECTED`. Competing admin decisions serialize on the Mentor Profile; one succeeds and the other receives `409 CONFLICT`. Do not automatically retry a review POST after a timeout or conflict; reload the detail or pending queue first.
