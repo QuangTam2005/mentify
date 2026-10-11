@@ -15,7 +15,7 @@ export function Spinner({ size = 'md', className, ...props }: SpinnerProps) {
 
   return (
     <div className={cn('flex items-center justify-center p-2', className)} {...props}>
-      <Loader2 className={cn('animate-spin text-primary-600', sizes[size])} />
+      <Loader2 className={cn('animate-spin text-primary', sizes[size])} />
     </div>
   );
 }

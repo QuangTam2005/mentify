@@ -25,7 +25,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi" className={beVietnamPro.variable} suppressHydrationWarning>
-      <body className="min-h-screen bg-slate-50 font-sans antialiased dark:bg-slate-950">
+      <body className="min-h-screen bg-background text-foreground font-sans antialiased">
         <Providers>{children}</Providers>
       </body>
     </html>

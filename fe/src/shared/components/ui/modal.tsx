@@ -41,13 +41,13 @@ export function Modal({ isOpen, onClose, title, description, children, className
       {/* Modal Dialog */}
       <div
         className={cn(
-          'relative z-50 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl transition-all dark:bg-slate-900 border border-slate-200 dark:border-slate-800 animate-in zoom-in-95',
+          'relative z-50 w-full max-w-lg rounded-xl bg-card p-6 shadow-2xl transition-all border border-border animate-in zoom-in-95 text-card-foreground',
           className
         )}
       >
         <button
           onClick={onClose}
-          className="absolute right-4 top-4 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+          className="absolute right-4 top-4 rounded-lg p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
         >
           <X className="h-5 w-5" />
           <span className="sr-only">Đóng</span>
@@ -55,9 +55,9 @@ export function Modal({ isOpen, onClose, title, description, children, className
 
         {title && (
           <div className="mb-4 pr-6">
-            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">{title}</h3>
+            <h3 className="text-lg font-bold text-foreground">{title}</h3>
             {description && (
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{description}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{description}</p>
             )}
           </div>
         )}
