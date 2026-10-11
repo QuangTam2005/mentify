@@ -26,7 +26,7 @@ export function parseError(error: unknown): FriendlyError {
       case 'FORBIDDEN':
         return {
           title: 'Truy cập bị từ chối',
-          message: 'Bạn không có quyền thực hiện thao tác này.',
+          message: error.message || 'Bạn không có quyền thực hiện thao tác này.',
           requestId: error.requestId,
         };
       case 'RESOURCE_NOT_FOUND':
