@@ -12,8 +12,13 @@ import { useAuth } from '../hooks/use-auth';
 import { parseError } from '@/core/errors/error-handler';
 import { Sparkles, Terminal, CheckCircle2, AlertCircle } from 'lucide-react';
 import { consumeReturnUrl, isSafeReturnUrl } from '../auth-navigation';
+import { isDevLoginEnabled } from '@/core/config/env';
 
 export function DevLoginPanel() {
+  if (!isDevLoginEnabled()) {
+    return null;
+  }
+
   const router = useRouter();
   const { devLogin, isPendingLogin, user } = useAuth();
 
@@ -67,7 +72,7 @@ export function DevLoginPanel() {
           </Badge>
         </div>
         <CardDescription className="text-xs">
-          Cấp phiên làm việc ngay lập tức cho bất kỳ Vai trò & Cấp bậc người dùng nào qua cổng{' '}
+          Cấp mã xác thực JWT Bearer ngay lập tức cho bất kỳ Vai trò & Cấp bậc người dùng nào qua cổng{' '}
           <code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-[11px] text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
             POST /api/v1/auth/dev-login
           </code>
@@ -138,7 +143,7 @@ export function DevLoginPanel() {
             className="w-full bg-amber-600 hover:bg-amber-700 focus:ring-amber-500 shadow-amber-600/20 text-white"
           >
             <Sparkles className="mr-2 h-4 w-4" />
-            Khởi tạo phiên thử nghiệm ngay
+            Khởi tạo xác thực thử nghiệm ngay
           </Button>
 
           {user && (

@@ -1,4 +1,5 @@
 import { apiClient } from '@/core/http/api-client';
+import { isDevLoginEnabled } from '@/core/config/env';
 import type { ApiResponse } from '@/core/types/api';
 import type {
   AuthMeResponse,
@@ -14,6 +15,9 @@ export const authApi = {
   },
 
   devLogin: (payload: DevLoginRequest = {}) => {
+    if (!isDevLoginEnabled()) {
+      return Promise.reject(new Error('Chế độ Đăng nhập Thử nghiệm không khả dụng trong môi trường này.'));
+    }
     return apiClient.post<AuthMeResponse>('/api/v1/auth/dev-login', payload);
   },
 

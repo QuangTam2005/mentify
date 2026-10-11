@@ -1,6 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { DevLoginPanel } from '@/features/auth/components/dev-login-panel';
+import { isDevLoginEnabled } from '@/core/config/env';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import { Button } from '@/shared/components/ui/button';
 import { Badge } from '@/shared/components/ui/badge';
@@ -32,7 +33,7 @@ export default function HomePage() {
 
         <p className="text-base text-slate-600 dark:text-slate-400 leading-relaxed">
           Kết nối học sinh THPT, sinh viên đại học với mạng lưới cố vấn giàu kinh nghiệm theo danh
-          mục đào tạo chuẩn <strong>Thông tư 74/2026/TT-BGDĐT</strong>, bảo mật phiên làm việc và bảo
+          mục đào tạo chuẩn <strong>Thông tư 74/2026/TT-BGDĐT</strong>, xác thực an toàn với Stateless JWT và bảo
           vệ dữ liệu cá nhân theo quy định pháp luật.
         </p>
 
@@ -56,7 +57,7 @@ export default function HomePage() {
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 items-start">
         {/* Cột trái: Khung thử nghiệm dành cho Lập trình viên */}
         <div className="lg:col-span-5 space-y-6">
-          <DevLoginPanel />
+          {isDevLoginEnabled() && <DevLoginPanel />}
 
           <Card className="border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/40">
             <CardHeader className="pb-3">
@@ -93,12 +94,12 @@ export default function HomePage() {
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2 text-primary-600">
                   <Lock className="h-4 w-4" />
-                  <CardTitle className="text-sm">Bảo mật Phiên & CSRF</CardTitle>
+                  <CardTitle className="text-sm">Bảo mật Stateless JWT</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="text-xs text-slate-600 dark:text-slate-400">
-                Phiên làm việc bảo mật qua Cookie an toàn kết hợp cơ chế kiểm soát mã xác thực kép
-                chống giả mạo request, tự động xác thực trước mọi thao tác lưu trữ dữ liệu.
+                Xác thực bảo mật qua cơ chế Stateless JWT Bearer Token lưu trữ an toàn trong RAM,
+                bảo vệ toàn diện các giao dịch và điểm cuối API theo chuẩn kiến trúc hiện đại 2026.
               </CardContent>
             </Card>
 

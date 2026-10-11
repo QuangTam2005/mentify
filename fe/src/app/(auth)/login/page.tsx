@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { DevLoginPanel } from '@/features/auth/components/dev-login-panel';
+import { isDevLoginEnabled } from '@/core/config/env';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card';
 import { BookOpen, ShieldCheck } from 'lucide-react';
@@ -74,11 +75,13 @@ export default function LoginPage() {
               Tiếp tục với Google
             </Button>
 
-            <div className="flex items-center gap-2 text-center text-xs text-slate-400">
-              <span className="flex-1 border-t border-slate-200 dark:border-slate-800" />
-              <span>HOẶC CHẾ ĐỘ THỬ NGHIỆM CHO LẬP TRÌNH VIÊN</span>
-              <span className="flex-1 border-t border-slate-200 dark:border-slate-800" />
-            </div>
+            {isDevLoginEnabled() && (
+              <div className="flex items-center gap-2 text-center text-xs text-slate-400">
+                <span className="flex-1 border-t border-slate-200 dark:border-slate-800" />
+                <span>HOẶC CHẾ ĐỘ THỬ NGHIỆM CHO LẬP TRÌNH VIÊN</span>
+                <span className="flex-1 border-t border-slate-200 dark:border-slate-800" />
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -89,11 +92,11 @@ export default function LoginPage() {
         </div>
 
         {/* Khối Đăng nhập Nhanh Dev */}
-        <DevLoginPanel />
+        {isDevLoginEnabled() && <DevLoginPanel />}
 
         <div className="text-center text-xs text-slate-400 flex items-center justify-center gap-1">
           <ShieldCheck className="h-3.5 w-3.5 text-primary-600" />
-          <span>Phiên làm việc bảo mật qua Cookie HttpOnly và Token bảo vệ kép</span>
+          <span>Xác thực an toàn qua Stateless JWT Bearer Token theo chuẩn kiến trúc 2026</span>
         </div>
       </div>
     </div>

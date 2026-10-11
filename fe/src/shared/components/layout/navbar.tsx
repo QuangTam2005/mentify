@@ -56,7 +56,7 @@ export function Navbar() {
           </nav>
         </div>
 
-        {/* User Session Actions */}
+        {/* User Auth Actions */}
         <div className="flex items-center gap-3">
           {isAuthenticated && user ? (
             <div className="flex items-center gap-3">

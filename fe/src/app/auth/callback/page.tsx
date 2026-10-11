@@ -80,7 +80,7 @@ export default function AuthCallbackPage() {
                 Đang hoàn tất đăng nhập...
               </h2>
               <p className="text-xs text-slate-500">
-                Hệ thống đang đồng bộ phiên làm việc bảo mật với máy chủ Mentify.
+                Hệ thống đang đồng bộ xác thực JWT bảo mật với máy chủ Mentify.
               </p>
             </div>
           )}

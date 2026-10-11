@@ -18,7 +18,7 @@ export default function ProfilePage() {
   if (isLoading) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-16 text-center">
-        <p className="text-sm text-slate-500">Đang nạp thông tin phiên đăng nhập...</p>
+        <p className="text-sm text-slate-500">Đang nạp thông tin tài khoản...</p>
       </div>
     );
   }
@@ -31,14 +31,13 @@ export default function ProfilePage() {
         </div>
         <h2 className="text-xl font-bold text-slate-900 dark:text-white">Yêu cầu Đăng nhập</h2>
         <p className="text-sm text-slate-600 dark:text-slate-400">
-          Bạn cần đăng nhập bằng tài khoản Google hoặc sử dụng chế độ Dev Fast Login để truy cập
-          hồ sơ cá nhân và quản lý pháp lý.
+          Bạn cần đăng nhập để truy cập hồ sơ cá nhân và quản lý thông tin pháp lý.
         </p>
         <div className="pt-2">
           <Link href="/login">
             <Button className="w-full">
               <LogIn className="mr-2 h-4 w-4" />
-              Đến trang Đăng nhập / Dev Login
+              Đến trang Đăng nhập
             </Button>
           </Link>
         </div>

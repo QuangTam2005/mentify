@@ -29,7 +29,7 @@ export function useAuth() {
     staleTime: 5 * 60 * 1000,
   });
 
-  // Đồng bộ session từ query vào Zustand store
+  // Đồng bộ thông tin người dùng từ query vào Zustand store
   useEffect(() => {
     if (meQuery.isSuccess) {
       setUser(meQuery.data);
