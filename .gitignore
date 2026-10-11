@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+fe/node_modules/
+.pnp
+.pnp.js
+
+# Production & Build outputs
+target/
+be/target/
+build/
+dist/
+.next/
+fe/.next/
+out/
+fe/out/
+
+# Environment files
+.env
+.env*.local
+*.local
+be/.env
+fe/.env
+fe/.env.local
+
+# Maven
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE & Editors
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.settings/
+.classpath
+.project
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# TypeScript cache
+*.tsbuildinfo
+fe/tsconfig.tsbuildinfo
+next-env.d.ts

@@ -1,0 +1,13 @@
+spring:
+  flyway:
+    clean-disabled: false
+
+app:
+  security:
+    jwt:
+      enabled: false
+
+management:
+  health:
+    mail:
+      enabled: false
