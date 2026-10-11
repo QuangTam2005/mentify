@@ -8,12 +8,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -43,6 +45,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -63,6 +66,9 @@ class MentorApplicationContractTests {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private RequestMappingHandlerMapping requestMappingHandlerMapping;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -128,13 +134,26 @@ class MentorApplicationContractTests {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"))
                 .andExpect(jsonPath("$.timestamp").value(matchesPattern(ISO_OFFSET_REGEX)));
+    }
 
-        // Route alias: /api/mentor/applications
+    @Test
+    @DisplayName("Legacy mentor application paths are unmapped and do not redirect")
+    void legacyPaths_areUnmappedAndDoNotRedirect() throws Exception {
+        assertThat(requestMappingHandlerMapping.getHandler(
+                new MockHttpServletRequest("POST", "/api/mentor/applications"))).isNull();
+        assertThat(requestMappingHandlerMapping.getHandler(
+                new MockHttpServletRequest("GET", "/api/mentor/applications/me"))).isNull();
+
         mockMvc.perform(post("/api/mentor/applications")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(requestDto)))
+                        .content(objectMapper.writeValueAsString(
+                                new SubmitMentorApplicationRequest(null, null, null, "Bio", "Expertise", null))))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+                .andExpect(result -> assertThat(result.getResponse().getStatus() / 100).isNotEqualTo(3));
+
+        mockMvc.perform(get("/api/mentor/applications/me"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(result -> assertThat(result.getResponse().getStatus() / 100).isNotEqualTo(3));
     }
 
     @Test
@@ -363,5 +382,87 @@ class MentorApplicationContractTests {
         // Confirm victim has no mentor profile created
         assertThat(mentorProfileRepository.findByUserId(victim.getId())).isEmpty();
         assertThat(mentorProfileRepository.findByUserId(attacker.getId())).isPresent();
+    }
+
+    @Test
+    @DisplayName("Current application endpoint requires authentication")
+    void currentApplication_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/mentor/applications/me"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+    }
+
+    @Test
+    @DisplayName("Current application endpoint returns 404 when applicant has no application")
+    void currentApplication_missing_returns404() throws Exception {
+        UserEntity user = TestFixtures.saveUser(userRepository, "no-application@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+
+        mockMvc.perform(get("/api/v1/mentor/applications/me")
+                        .with(SecurityMockMvcRequestPostProcessors.user(user.getEmail())))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("Applicant receives their latest persisted application and no internal review fields")
+    void currentApplication_returnsLatestOwnedAttemptAndApplicantFields() throws Exception {
+        UserEntity user = TestFixtures.saveUser(userRepository, "current-application@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        MentorProfileEntity profile = mentorProfileRepository.saveAndFlush(new MentorProfileEntity(user.getId()));
+        profile.setMentorStatus(MentorStatus.REJECTED);
+        mentorProfileRepository.saveAndFlush(profile);
+
+        MentorApplicationEntity older = new MentorApplicationEntity(profile.getId(), user.getId(), UserType.UNIVERSITY_STUDENT.name(), 1);
+        older.setStatus(MentorApplicationStatus.REJECTED);
+        older.setBio("Previous application");
+        older.setRejectionReason("Internal review detail");
+        mentorApplicationRepository.saveAndFlush(older);
+
+        MentorApplicationEntity latest = new MentorApplicationEntity(profile.getId(), user.getId(), UserType.UNIVERSITY_STUDENT.name(), 2);
+        latest.setStatus(MentorApplicationStatus.PENDING);
+        SchoolEntity school = schoolRepository.findAll().stream().findFirst().orElseThrow();
+        latest.setSchoolId(school.getId());
+        latest.setCustomMajorName("Computer Science");
+        latest.setBio("Current application");
+        latest.setRejectionReason("Confidential review detail");
+        mentorApplicationRepository.saveAndFlush(latest);
+
+        mockMvc.perform(get("/api/v1/mentor/applications/me")
+                        .with(SecurityMockMvcRequestPostProcessors.user(user.getEmail())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.mentorApplicationId").value(latest.getId().toString()))
+                .andExpect(jsonPath("$.data.mentorStatus").value("REJECTED"))
+                .andExpect(jsonPath("$.data.applicationStatus").value("PENDING"))
+                .andExpect(jsonPath("$.data.attemptNumber").value(2))
+                .andExpect(jsonPath("$.data.appliedUserType").value("UNIVERSITY_STUDENT"))
+                .andExpect(jsonPath("$.data.schoolId").value(school.getId().toString()))
+                .andExpect(jsonPath("$.data.customMajorName").value("Computer Science"))
+                .andExpect(jsonPath("$.data.bio").value("Current application"))
+                .andExpect(jsonPath("$.data.submittedAt").isNotEmpty())
+                .andExpect(jsonPath("$.data.rejectionReason").doesNotExist())
+                .andExpect(jsonPath("$.data.reviewedAt").doesNotExist())
+                .andExpect(jsonPath("$.data.userId").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("Current application is scoped to authenticated user")
+    void currentApplication_userCannotReadAnotherUsersApplication() throws Exception {
+        UserEntity userA = TestFixtures.saveUser(userRepository, "applicant-a@mentify.vn", UserType.UNIVERSITY_STUDENT, UserRole.USER);
+        UserEntity userB = TestFixtures.saveUser(userRepository, "applicant-b@mentify.vn", UserType.WORKING_PROFESSIONAL, UserRole.USER);
+        MentorProfileEntity profileB = mentorProfileRepository.saveAndFlush(new MentorProfileEntity(userB.getId()));
+        MentorApplicationEntity applicationB = new MentorApplicationEntity(profileB.getId(), userB.getId(), UserType.WORKING_PROFESSIONAL.name(), 1);
+        applicationB.setBio("User B private application");
+        mentorApplicationRepository.saveAndFlush(applicationB);
+
+        mockMvc.perform(get("/api/v1/mentor/applications/me")
+                        .with(SecurityMockMvcRequestPostProcessors.user(userA.getEmail())))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_NOT_FOUND"));
+
+        mockMvc.perform(get("/api/v1/mentor/applications/me")
+                        .with(SecurityMockMvcRequestPostProcessors.user(userB.getEmail())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.mentorApplicationId").value(applicationB.getId().toString()))
+                .andExpect(jsonPath("$.data.bio").value("User B private application"));
     }
 }

@@ -14,6 +14,8 @@ public interface MentorApplicationRepository extends JpaRepository<MentorApplica
 
     List<MentorApplicationEntity> findByUserIdOrderBySubmittedAtDesc(UUID userId);
 
+    Optional<MentorApplicationEntity> findFirstByUserIdOrderByAttemptNumberDesc(UUID userId);
+
     Optional<MentorApplicationEntity> findFirstByMentorProfileIdOrderByAttemptNumberDesc(UUID mentorProfileId);
 
     List<MentorApplicationEntity> findByStatus(MentorApplicationStatus status);

@@ -8,6 +8,7 @@ import vn.mentify.be.modules.mentor.entity.MentorProfileEntity;
 import vn.mentify.be.modules.mentor.entity.MentorStatus;
 import vn.mentify.be.modules.mentor.dto.request.SubmitMentorApplicationRequest;
 import vn.mentify.be.modules.mentor.dto.response.MentorApplicationSubmissionResponse;
+import vn.mentify.be.modules.mentor.dto.response.CurrentMentorApplicationResponse;
 import vn.mentify.be.modules.mentor.repository.MentorApplicationRepository;
 import vn.mentify.be.modules.mentor.repository.MentorProfileRepository;
 import vn.mentify.be.modules.mentor.service.MentorApplicationService;
@@ -17,6 +18,7 @@ import vn.mentify.be.modules.user.service.UserService;
 import vn.mentify.be.shared.api.ApiErrorCode;
 import vn.mentify.be.shared.api.ApiException;
 import vn.mentify.be.shared.api.ConflictException;
+import vn.mentify.be.shared.api.ResourceNotFoundException;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -133,6 +135,31 @@ public class MentorApplicationServiceImpl implements MentorApplicationService {
                 savedApplication.getAppliedUserType(),
                 savedProfile.isAcceptingBookings(),
                 savedApplication.getSubmittedAt()
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CurrentMentorApplicationResponse getCurrentApplication(UUID userId) {
+        MentorApplicationEntity application = mentorApplicationRepository
+                .findFirstByUserIdOrderByAttemptNumberDesc(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("KhÃ´ng tÃ¬m tháº¥y Ä‘Æ¡n á»©ng tuyá»ƒn mentor"));
+        MentorProfileEntity profile = mentorProfileRepository.findByUserId(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("KhÃ´ng tÃ¬m tháº¥y há»“ sÆ¡ mentor"));
+
+        return new CurrentMentorApplicationResponse(
+                profile.getId(),
+                application.getId(),
+                profile.getMentorStatus(),
+                application.getStatus(),
+                application.getAttemptNumber(),
+                application.getAppliedUserType(),
+                application.getSchoolId(),
+                application.getMajorGroupCode(),
+                application.getCustomMajorName(),
+                application.getBio(),
+                profile.isAcceptingBookings(),
+                application.getSubmittedAt()
         );
     }
 }
