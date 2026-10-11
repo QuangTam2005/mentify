@@ -1,12 +1,12 @@
-package vn.mentify.be.modules.mentor.dto;
+package vn.mentify.be.modules.mentor.dto.response;
 
-import vn.mentify.be.modules.mentor.domain.MentorApplicationStatus;
-import vn.mentify.be.modules.mentor.domain.MentorStatus;
+import vn.mentify.be.modules.mentor.entity.MentorApplicationStatus;
+import vn.mentify.be.modules.mentor.entity.MentorStatus;
 
 import java.time.Instant;
 import java.util.UUID;
 
-public record MentorApplicationSubmissionResult(
+public record MentorApplicationSubmissionResponse(
         UUID mentorProfileId,
         UUID mentorApplicationId,
         UUID userId,

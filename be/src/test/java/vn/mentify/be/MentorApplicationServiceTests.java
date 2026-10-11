@@ -7,15 +7,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import vn.mentify.be.modules.mentor.domain.MentorApplicationEntity;
-import vn.mentify.be.modules.mentor.domain.MentorApplicationStatus;
-import vn.mentify.be.modules.mentor.domain.MentorProfileEntity;
-import vn.mentify.be.modules.mentor.domain.MentorStatus;
-import vn.mentify.be.modules.mentor.dto.MentorApplicationSubmissionResult;
-import vn.mentify.be.modules.mentor.dto.SubmitMentorApplicationCommand;
-import vn.mentify.be.modules.mentor.persistence.MentorApplicationRepository;
-import vn.mentify.be.modules.mentor.persistence.MentorProfileRepository;
-import vn.mentify.be.modules.mentor.service.MentorApplicationServiceImpl;
+import vn.mentify.be.modules.mentor.entity.MentorApplicationEntity;
+import vn.mentify.be.modules.mentor.entity.MentorApplicationStatus;
+import vn.mentify.be.modules.mentor.entity.MentorProfileEntity;
+import vn.mentify.be.modules.mentor.entity.MentorStatus;
+import vn.mentify.be.modules.mentor.dto.request.SubmitMentorApplicationRequest;
+import vn.mentify.be.modules.mentor.dto.response.MentorApplicationSubmissionResponse;
+import vn.mentify.be.modules.mentor.repository.MentorApplicationRepository;
+import vn.mentify.be.modules.mentor.repository.MentorProfileRepository;
+import vn.mentify.be.modules.mentor.service.impl.MentorApplicationServiceImpl;
 import vn.mentify.be.modules.user.dto.UserProfileResponse;
 import vn.mentify.be.modules.user.persistence.AccountStatus;
 import vn.mentify.be.modules.user.persistence.UserRole;
@@ -89,7 +89,7 @@ class MentorApplicationServiceTests {
         when(mentorApplicationRepository.saveAndFlush(any(MentorApplicationEntity.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
-        SubmitMentorApplicationCommand command = new SubmitMentorApplicationCommand(
+        SubmitMentorApplicationRequest request = new SubmitMentorApplicationRequest(
                 UUID.randomUUID(),
                 "7480",
                 "Khoa học máy tính",
@@ -98,7 +98,7 @@ class MentorApplicationServiceTests {
                 "https://meet.google.com/test-meet"
         );
 
-        MentorApplicationSubmissionResult result = service.submitInitialApplication(userId, command);
+        MentorApplicationSubmissionResponse result = service.submitInitialApplication(userId, request);
 
         assertThat(result).isNotNull();
         assertThat(result.userId()).isEqualTo(userId);
@@ -138,7 +138,7 @@ class MentorApplicationServiceTests {
         when(mentorApplicationRepository.saveAndFlush(any(MentorApplicationEntity.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
-        SubmitMentorApplicationCommand command = new SubmitMentorApplicationCommand(
+        SubmitMentorApplicationRequest request = new SubmitMentorApplicationRequest(
                 null,
                 null,
                 null,
@@ -147,7 +147,7 @@ class MentorApplicationServiceTests {
                 null
         );
 
-        MentorApplicationSubmissionResult result = service.submitInitialApplication(userId, command);
+        MentorApplicationSubmissionResponse result = service.submitInitialApplication(userId, request);
 
         assertThat(result.appliedUserType()).isEqualTo(UserType.WORKING_PROFESSIONAL.name());
         assertThat(result.mentorStatus()).isEqualTo(MentorStatus.PENDING);
@@ -161,9 +161,9 @@ class MentorApplicationServiceTests {
         UUID userId = UUID.randomUUID();
         when(userService.getProfile(userId)).thenReturn(buildUserProfile(userId, UserType.SCHOOL_STUDENT));
 
-        SubmitMentorApplicationCommand command = new SubmitMentorApplicationCommand(null, null, null, null, null, null);
+        SubmitMentorApplicationRequest request = new SubmitMentorApplicationRequest(null, null, null, null, null, null);
 
-        assertThatThrownBy(() -> service.submitInitialApplication(userId, command))
+        assertThatThrownBy(() -> service.submitInitialApplication(userId, request))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> {
                     ApiException apiEx = (ApiException) ex;
@@ -182,9 +182,9 @@ class MentorApplicationServiceTests {
         when(userService.getProfile(userId))
                 .thenThrow(new ResourceNotFoundException("Không tìm thấy người dùng với id: " + userId));
 
-        SubmitMentorApplicationCommand command = new SubmitMentorApplicationCommand(null, null, null, null, null, null);
+        SubmitMentorApplicationRequest request = new SubmitMentorApplicationRequest(null, null, null, null, null, null);
 
-        assertThatThrownBy(() -> service.submitInitialApplication(userId, command))
+        assertThatThrownBy(() -> service.submitInitialApplication(userId, request))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("Không tìm thấy người dùng với id: " + userId);
 
@@ -202,9 +202,9 @@ class MentorApplicationServiceTests {
         existingProfile.setMentorStatus(MentorStatus.PENDING);
         when(mentorProfileRepository.findByUserId(userId)).thenReturn(Optional.of(existingProfile));
 
-        SubmitMentorApplicationCommand command = new SubmitMentorApplicationCommand(null, null, null, null, null, null);
+        SubmitMentorApplicationRequest request = new SubmitMentorApplicationRequest(null, null, null, null, null, null);
 
-        assertThatThrownBy(() -> service.submitInitialApplication(userId, command))
+        assertThatThrownBy(() -> service.submitInitialApplication(userId, request))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("Hồ sơ mentor đã tồn tại với trạng thái: PENDING");
 
@@ -222,9 +222,9 @@ class MentorApplicationServiceTests {
         existingProfile.setMentorStatus(MentorStatus.REJECTED);
         when(mentorProfileRepository.findByUserId(userId)).thenReturn(Optional.of(existingProfile));
 
-        SubmitMentorApplicationCommand command = new SubmitMentorApplicationCommand(null, null, null, null, null, null);
+        SubmitMentorApplicationRequest request = new SubmitMentorApplicationRequest(null, null, null, null, null, null);
 
-        assertThatThrownBy(() -> service.submitInitialApplication(userId, command))
+        assertThatThrownBy(() -> service.submitInitialApplication(userId, request))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("Hồ sơ mentor đã tồn tại với trạng thái: REJECTED");
 
@@ -253,9 +253,9 @@ class MentorApplicationServiceTests {
         when(mentorApplicationRepository.findFirstByMentorProfileIdOrderByAttemptNumberDesc(existingProfile.getId()))
                 .thenReturn(Optional.of(existingApp));
 
-        SubmitMentorApplicationCommand command = new SubmitMentorApplicationCommand(null, null, null, null, null, null);
+        SubmitMentorApplicationRequest request = new SubmitMentorApplicationRequest(null, null, null, null, null, null);
 
-        assertThatThrownBy(() -> service.submitInitialApplication(userId, command))
+        assertThatThrownBy(() -> service.submitInitialApplication(userId, request))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("Người dùng đã có đơn ứng tuyển mentor trước đó");
 
@@ -275,7 +275,7 @@ class MentorApplicationServiceTests {
         when(mentorApplicationRepository.saveAndFlush(any(MentorApplicationEntity.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
-        MentorApplicationSubmissionResult result = service.submitInitialApplication(userId, null);
+        MentorApplicationSubmissionResponse result = service.submitInitialApplication(userId, null);
 
         assertThat(result.acceptingBookings()).isFalse();
     }

@@ -1,15 +1,16 @@
-package vn.mentify.be.modules.mentor.service;
+package vn.mentify.be.modules.mentor.service.impl;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import vn.mentify.be.modules.mentor.domain.MentorApplicationEntity;
-import vn.mentify.be.modules.mentor.domain.MentorApplicationStatus;
-import vn.mentify.be.modules.mentor.domain.MentorProfileEntity;
-import vn.mentify.be.modules.mentor.domain.MentorStatus;
-import vn.mentify.be.modules.mentor.dto.MentorApplicationSubmissionResult;
-import vn.mentify.be.modules.mentor.dto.SubmitMentorApplicationCommand;
-import vn.mentify.be.modules.mentor.persistence.MentorApplicationRepository;
-import vn.mentify.be.modules.mentor.persistence.MentorProfileRepository;
+import vn.mentify.be.modules.mentor.entity.MentorApplicationEntity;
+import vn.mentify.be.modules.mentor.entity.MentorApplicationStatus;
+import vn.mentify.be.modules.mentor.entity.MentorProfileEntity;
+import vn.mentify.be.modules.mentor.entity.MentorStatus;
+import vn.mentify.be.modules.mentor.dto.request.SubmitMentorApplicationRequest;
+import vn.mentify.be.modules.mentor.dto.response.MentorApplicationSubmissionResponse;
+import vn.mentify.be.modules.mentor.repository.MentorApplicationRepository;
+import vn.mentify.be.modules.mentor.repository.MentorProfileRepository;
+import vn.mentify.be.modules.mentor.service.MentorApplicationService;
 import vn.mentify.be.modules.user.dto.UserProfileResponse;
 import vn.mentify.be.modules.user.persistence.UserType;
 import vn.mentify.be.modules.user.service.UserService;
@@ -43,13 +44,13 @@ public class MentorApplicationServiceImpl implements MentorApplicationService {
 
     @Override
     @Transactional
-    public MentorApplicationSubmissionResult submitInitialApplication(UUID userId, SubmitMentorApplicationCommand command) {
+    public MentorApplicationSubmissionResponse submitInitialApplication(UUID userId, SubmitMentorApplicationRequest request) {
         if (userId == null) {
             throw new ApiException(ApiErrorCode.VALIDATION_ERROR, "userId không được để trống");
         }
-        SubmitMentorApplicationCommand safeCommand = command != null
-                ? command
-                : new SubmitMentorApplicationCommand(null, null, null, null, null, null);
+        SubmitMentorApplicationRequest safeRequest = request != null
+                ? request
+                : new SubmitMentorApplicationRequest(null, null, null, null, null, null);
 
         // 1. Verify user exists and check eligibility via public User boundary
         UserProfileResponse userProfile = userService.getProfile(userId);
@@ -81,24 +82,24 @@ public class MentorApplicationServiceImpl implements MentorApplicationService {
             }
         }
 
-        // 4. Update profile fields from command and set status to PENDING
-        if (safeCommand.schoolId() != null) {
-            profile.setSchoolId(safeCommand.schoolId());
+        // 4. Update profile fields from request and set status to PENDING
+        if (safeRequest.schoolId() != null) {
+            profile.setSchoolId(safeRequest.schoolId());
         }
-        if (safeCommand.majorGroupCode() != null) {
-            profile.setMajorGroupCode(safeCommand.majorGroupCode().trim());
+        if (safeRequest.majorGroupCode() != null) {
+            profile.setMajorGroupCode(safeRequest.majorGroupCode().trim());
         }
-        if (safeCommand.customMajorName() != null) {
-            profile.setCustomMajorName(safeCommand.customMajorName().trim());
+        if (safeRequest.customMajorName() != null) {
+            profile.setCustomMajorName(safeRequest.customMajorName().trim());
         }
-        if (safeCommand.bio() != null) {
-            profile.setBio(safeCommand.bio().trim());
+        if (safeRequest.bio() != null) {
+            profile.setBio(safeRequest.bio().trim());
         }
-        if (safeCommand.expertiseAreas() != null) {
-            profile.setExpertiseAreas(safeCommand.expertiseAreas().trim());
+        if (safeRequest.expertiseAreas() != null) {
+            profile.setExpertiseAreas(safeRequest.expertiseAreas().trim());
         }
-        if (safeCommand.defaultMeetingLink() != null) {
-            profile.setDefaultMeetingLink(safeCommand.defaultMeetingLink().trim());
+        if (safeRequest.defaultMeetingLink() != null) {
+            profile.setDefaultMeetingLink(safeRequest.defaultMeetingLink().trim());
         }
 
         profile.setMentorStatus(MentorStatus.PENDING);
@@ -122,7 +123,7 @@ public class MentorApplicationServiceImpl implements MentorApplicationService {
 
         MentorApplicationEntity savedApplication = mentorApplicationRepository.saveAndFlush(application);
 
-        return new MentorApplicationSubmissionResult(
+        return new MentorApplicationSubmissionResponse(
                 savedProfile.getId(),
                 savedApplication.getId(),
                 userId,

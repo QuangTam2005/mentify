@@ -1,4 +1,4 @@
-package vn.mentify.be.modules.mentor.domain;
+package vn.mentify.be.modules.mentor.entity;
 
 /**
  * Lifecycle status of a mentor profile.

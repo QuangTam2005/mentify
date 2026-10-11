@@ -1,8 +1,8 @@
-package vn.mentify.be.modules.mentor.persistence;
+package vn.mentify.be.modules.mentor.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
-import vn.mentify.be.modules.mentor.domain.MentorProfileEntity;
-import vn.mentify.be.modules.mentor.domain.MentorStatus;
+import vn.mentify.be.modules.mentor.entity.MentorProfileEntity;
+import vn.mentify.be.modules.mentor.entity.MentorStatus;
 
 import java.util.List;
 import java.util.Optional;

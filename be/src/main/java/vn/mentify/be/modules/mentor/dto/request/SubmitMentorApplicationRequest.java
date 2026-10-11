@@ -1,8 +1,8 @@
-package vn.mentify.be.modules.mentor.dto;
+package vn.mentify.be.modules.mentor.dto.request;
 
 import java.util.UUID;
 
-public record SubmitMentorApplicationCommand(
+public record SubmitMentorApplicationRequest(
         UUID schoolId,
         String majorGroupCode,
         String customMajorName,

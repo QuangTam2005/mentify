@@ -13,12 +13,12 @@ import vn.mentify.be.modules.masterdata.domain.MajorGroupEntity;
 import vn.mentify.be.modules.masterdata.domain.SchoolEntity;
 import vn.mentify.be.modules.masterdata.persistence.MajorGroupRepository;
 import vn.mentify.be.modules.masterdata.persistence.SchoolRepository;
-import vn.mentify.be.modules.mentor.domain.MentorApplicationEntity;
-import vn.mentify.be.modules.mentor.domain.MentorApplicationStatus;
-import vn.mentify.be.modules.mentor.domain.MentorProfileEntity;
-import vn.mentify.be.modules.mentor.domain.MentorStatus;
-import vn.mentify.be.modules.mentor.persistence.MentorApplicationRepository;
-import vn.mentify.be.modules.mentor.persistence.MentorProfileRepository;
+import vn.mentify.be.modules.mentor.entity.MentorApplicationEntity;
+import vn.mentify.be.modules.mentor.entity.MentorApplicationStatus;
+import vn.mentify.be.modules.mentor.entity.MentorProfileEntity;
+import vn.mentify.be.modules.mentor.entity.MentorStatus;
+import vn.mentify.be.modules.mentor.repository.MentorApplicationRepository;
+import vn.mentify.be.modules.mentor.repository.MentorProfileRepository;
 import vn.mentify.be.modules.user.persistence.UserEntity;
 import vn.mentify.be.modules.user.persistence.UserRepository;
 import vn.mentify.be.modules.user.persistence.UserRole;
@@ -309,7 +309,7 @@ class MentorPostgresIntegrationTest extends AbstractPostgresIntegrationTest {
         SchoolEntity school = schoolRepository.findAll().stream().findFirst().orElse(null);
         MajorGroupEntity majorGroup = majorGroupRepository.findAll().stream().findFirst().orElse(null);
 
-        var command = new vn.mentify.be.modules.mentor.dto.SubmitMentorApplicationCommand(
+        var command = new vn.mentify.be.modules.mentor.dto.request.SubmitMentorApplicationRequest(
                 school != null ? school.getId() : null,
                 majorGroup != null ? majorGroup.getCode() : null,
                 "Kỹ thuật phần mềm",
@@ -354,7 +354,7 @@ class MentorPostgresIntegrationTest extends AbstractPostgresIntegrationTest {
                 UserType.SCHOOL_STUDENT,
                 UserRole.USER);
 
-        var command = new vn.mentify.be.modules.mentor.dto.SubmitMentorApplicationCommand(
+        var command = new vn.mentify.be.modules.mentor.dto.request.SubmitMentorApplicationRequest(
                 null, null, null, "Học sinh THPT muốn làm mentor", null, null);
 
         assertThatThrownBy(() -> mentorApplicationService.submitInitialApplication(student.getId(), command))
@@ -377,7 +377,7 @@ class MentorPostgresIntegrationTest extends AbstractPostgresIntegrationTest {
                 UserType.WORKING_PROFESSIONAL,
                 UserRole.USER);
 
-        var command = new vn.mentify.be.modules.mentor.dto.SubmitMentorApplicationCommand(
+        var command = new vn.mentify.be.modules.mentor.dto.request.SubmitMentorApplicationRequest(
                 null, null, null, "Chuyên viên phần mềm", "Backend", null);
 
         mentorApplicationService.submitInitialApplication(user.getId(), command);
@@ -401,7 +401,7 @@ class MentorPostgresIntegrationTest extends AbstractPostgresIntegrationTest {
                 UserType.WORKING_PROFESSIONAL,
                 UserRole.USER);
 
-        var command = new vn.mentify.be.modules.mentor.dto.SubmitMentorApplicationCommand(
+        var command = new vn.mentify.be.modules.mentor.dto.request.SubmitMentorApplicationRequest(
                 null, null, null, "Rollback candidate", null, null);
 
         var txTemplate = new org.springframework.transaction.support.TransactionTemplate(transactionManager);

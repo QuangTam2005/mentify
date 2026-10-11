@@ -1,4 +1,4 @@
-package vn.mentify.be.modules.mentor.domain;
+package vn.mentify.be.modules.mentor.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

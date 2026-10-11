@@ -1,11 +1,11 @@
 package vn.mentify.be.modules.mentor.service;
 
-import vn.mentify.be.modules.mentor.dto.MentorApplicationSubmissionResult;
-import vn.mentify.be.modules.mentor.dto.SubmitMentorApplicationCommand;
+import vn.mentify.be.modules.mentor.dto.request.SubmitMentorApplicationRequest;
+import vn.mentify.be.modules.mentor.dto.response.MentorApplicationSubmissionResponse;
 
 import java.util.UUID;
 
 public interface MentorApplicationService {
 
-    MentorApplicationSubmissionResult submitInitialApplication(UUID userId, SubmitMentorApplicationCommand command);
+    MentorApplicationSubmissionResponse submitInitialApplication(UUID userId, SubmitMentorApplicationRequest request);
 }
