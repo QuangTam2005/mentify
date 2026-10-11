@@ -7,6 +7,7 @@ import { clearAccessToken } from '../store/access-token';
 import { useAuthStore } from '../store/auth-store';
 import { rememberReturnUrl } from '../auth-navigation';
 import { AUTH_EXPIRED_EVENT } from '../auth-events';
+import { clearPrivateUserCache } from '../auth-cache';
 
 function isProtectedPath(pathname: string): boolean {
   return pathname === '/profile' || pathname.startsWith('/admin');
@@ -22,7 +23,7 @@ export function AuthExpiryHandler() {
     const handleAuthExpired = () => {
       clearAccessToken();
       useAuthStore.getState().clearUser();
-      queryClient.clear();
+      void clearPrivateUserCache(queryClient);
 
       if (!isProtectedPath(pathname) || redirecting.current) {
         return;

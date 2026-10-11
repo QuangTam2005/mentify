@@ -3,15 +3,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { masterDataApi } from '../api/master-data-api';
 import type { MajorGroupFilterParams, SchoolFilterParams } from '../types/master-data.types';
+import { masterDataKeys } from '../query-keys';
 
-export const MASTER_DATA_QUERY_KEYS = {
-  schools: (params?: SchoolFilterParams) => ['master-data', 'schools', params] as const,
-  majorGroups: (params?: MajorGroupFilterParams) => ['master-data', 'major-groups', params] as const,
-};
+export const MASTER_DATA_QUERY_KEYS = masterDataKeys;
 
 export function useSchools(params?: SchoolFilterParams) {
   return useQuery({
-    queryKey: MASTER_DATA_QUERY_KEYS.schools(params),
+    queryKey: masterDataKeys.schools(params),
     queryFn: async () => {
       const res = await masterDataApi.getSchools(params);
       return res;
@@ -23,7 +21,7 @@ export function useSchools(params?: SchoolFilterParams) {
 
 export function useMajorGroups(params?: MajorGroupFilterParams) {
   return useQuery({
-    queryKey: MASTER_DATA_QUERY_KEYS.majorGroups(params),
+    queryKey: masterDataKeys.majorGroups(params),
     queryFn: async () => {
       const res = await masterDataApi.getMajorGroups(params);
       return res.data;

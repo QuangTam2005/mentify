@@ -3,21 +3,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { userApi } from '../api/user-api';
 import type { RecordConsentRequest, UpdateProfileRequest } from '../types/user.types';
-import { AUTH_QUERY_KEYS } from '@/features/auth/hooks/use-auth';
+import { userKeys } from '../query-keys';
+import { authKeys } from '@/features/auth/query-keys';
+import { getAccessToken } from '@/features/auth/store/access-token';
 
-export const USER_QUERY_KEYS = {
-  profile: ['user', 'profile'] as const,
-};
+export const USER_QUERY_KEYS = userKeys;
 
 export function useUserProfile() {
   const queryClient = useQueryClient();
+  const hasToken = typeof window !== 'undefined' ? !!getAccessToken() : true;
 
   const profileQuery = useQuery({
-    queryKey: USER_QUERY_KEYS.profile,
+    queryKey: userKeys.profile(),
     queryFn: async () => {
       const res = await userApi.getProfile();
       return res.data;
     },
+    enabled: hasToken,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -27,9 +29,8 @@ export function useUserProfile() {
       return res.data;
     },
     onSuccess: (updatedProfile) => {
-      // Invalidate và cập nhật cache cả user profile lẫn auth/me
-      queryClient.setQueryData(USER_QUERY_KEYS.profile, updatedProfile);
-      queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEYS.me });
+      queryClient.setQueryData(userKeys.profile(), updatedProfile);
+      queryClient.invalidateQueries({ queryKey: authKeys.me() });
     },
   });
 

@@ -7,10 +7,10 @@ import { useAuthStore } from '../store/auth-store';
 import { clearAccessToken, getAccessToken, setAccessToken } from '../store/access-token';
 import { ApiError } from '@/core/errors/api-error';
 import type { DevLoginRequest } from '../types/auth.types';
+import { authKeys } from '../query-keys';
+import { clearPrivateUserCache } from '../auth-cache';
 
-export const AUTH_QUERY_KEYS = {
-  me: ['auth', 'me'] as const,
-};
+export const AUTH_QUERY_KEYS = authKeys;
 
 export function useAuth() {
   const queryClient = useQueryClient();
@@ -18,7 +18,7 @@ export function useAuth() {
   const hasToken = !!getAccessToken();
 
   const meQuery = useQuery({
-    queryKey: AUTH_QUERY_KEYS.me,
+    queryKey: authKeys.me(),
     queryFn: async () => {
       try {
         const res = await authApi.getMe();
@@ -43,14 +43,14 @@ export function useAuth() {
 
   // Đồng bộ thông tin người dùng từ query vào Zustand store
   useEffect(() => {
-    if (meQuery.isSuccess) {
+    if (meQuery.isSuccess && hasToken && meQuery.data) {
       setUser(meQuery.data);
     } else if (meQuery.isError) {
       if (meQuery.error instanceof ApiError && meQuery.error.isUnauthenticated()) {
         clearUser();
       }
     }
-  }, [meQuery.isSuccess, meQuery.isError, meQuery.error, meQuery.data, setUser, clearUser]);
+  }, [meQuery.isSuccess, meQuery.isError, meQuery.error, meQuery.data, hasToken, setUser, clearUser]);
 
   const devLoginMutation = useMutation({
     mutationFn: async (payload: DevLoginRequest) => {
@@ -62,9 +62,9 @@ export function useAuth() {
       return res.data;
     },
     onSuccess: (userData) => {
+      void clearPrivateUserCache(queryClient);
       setUser(userData);
-      queryClient.setQueryData(AUTH_QUERY_KEYS.me, userData);
-      queryClient.invalidateQueries({ queryKey: ['user'] });
+      queryClient.setQueryData(authKeys.me(), userData);
     },
   });
 
@@ -75,7 +75,7 @@ export function useAuth() {
     onSettled: () => {
       clearAccessToken();
       clearUser();
-      queryClient.clear();
+      void clearPrivateUserCache(queryClient);
     },
   });
 
